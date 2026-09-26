@@ -507,6 +507,15 @@ bool SX1262::isTxBusy() {
     return false;
 }
 
+void SX1262::abortTx() {
+    if (!_txActive) return;
+    _txActive = false;
+    _txFailed = true;
+    standby();
+    uint8_t clear[2] = {0x00, IRQ_TX_DONE_MASK_6X};
+    executeOpcode(OP_CLEAR_IRQ_STATUS_6X, clear, 2);
+}
+
 size_t SX1262::write(uint8_t byte) { return write(&byte, 1); }
 
 size_t SX1262::write(const uint8_t* buffer, size_t size) {

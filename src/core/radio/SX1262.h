@@ -24,6 +24,9 @@ public:
     int  beginPacket(int implicitHeader = 0);
     int  endPacket(bool async = false);
     bool isTxBusy();
+    // Ends an async transmission the caller has given up on (radio to standby,
+    // recorded as failed) so the next beginPacket() is not refused.
+    void abortTx();
     bool txFailed() const { return _txFailed; }
     size_t write(uint8_t byte);
     size_t write(const uint8_t* buffer, size_t size);
