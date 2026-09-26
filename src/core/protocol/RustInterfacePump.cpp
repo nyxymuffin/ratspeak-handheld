@@ -1,6 +1,6 @@
 
 #include "protocol/RustInterfacePump.h"
-#include "transport/LoRaInterface.h"
+#include "transport/LoRaSlotDriver.h"
 #include "transport/RnsAutoInterface.h"
 #include "transport/TCPClientInterface.h"
 #include "transport/WiFiInterface.h"
@@ -26,7 +26,7 @@ void RustInterfacePump::begin(rs_handheld_rns_t* ctx, RustClock* clock) {
     _clock = clock;
 }
 
-void RustInterfacePump::attachLoRa(LoRaInterface* lora) {
+void RustInterfacePump::attachLoRa(LoRaSlotDriver* lora) {
     if (_changingReceiptHook || _stopping) return;
     _changingReceiptHook = true;
     const auto* context = _ctx;

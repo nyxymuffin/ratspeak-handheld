@@ -9,29 +9,31 @@
 #include "radio/SX1262Timing.h"
 #include "radio/RadioTimingPolicy.h"
 #include "transport/TxLease.h"
+#include "transport/LoRaSlotDriver.h"
 
 // RNode-framed LoRa driver. The raw-frame sink is the RX handoff;
 // TX enters via sendRaw from the protocol pump.
-class LoRaInterface {
+// Native Reticulum LoRa: one of the two slot-0 drivers (LoRaSlotDriver.h).
+class LoRaInterface final : public LoRaSlotDriver {
 public:
     LoRaInterface(BoardRadio* radio, const char* name = "LoRaInterface");
     ~LoRaInterface();
 
     bool start();
     void stop();
-    void loop();
+    void loop() override;
     // Service only an already-started burst before the owner enters blocking
     // storage work. Never start a queued packet here; completion restores RX.
-    bool pollBeforeBlockingWork();
+    bool pollBeforeBlockingWork() override;
 
     // Close admission without aborting an already-started burst. Only its
     // remaining physical frame/completion may progress until explicit stop.
-    void beginMaintenance();
-    void pollMaintenance();
-    bool maintenanceDrained() const {
+    void beginMaintenance() override;
+    void pollMaintenance() override;
+    bool maintenanceDrained() const override {
         return _maintenance && !_maintenanceTxFailed && !_txPending && !_splitTxPending && _txCount == 0;
     }
-    bool maintenanceFailed() const { return _maintenanceTxFailed; }
+    bool maintenanceFailed() const override { return _maintenanceTxFailed; }
     uint32_t maintenanceDroppedRaw() const { return _maintenanceDroppedRaw; }
     // Terminal retirement after queue admission, distinct from refused offers.
     // Includes leased frames without application receipts. Saturates across restarts.
@@ -39,30 +41,30 @@ public:
 
     // Raw-frame seam for the backend pump: RX frames go to the sink; TX
     // reuses the existing queue/split/airtime path.
-    using RawSink = std::function<void(const uint8_t* data, size_t len)>;
-    void setRawSink(RawSink sink) { _rawSink = sink; }
+    using RawSink = LoRaSlotDriver::RawSink;
+    void setRawSink(RawSink sink) override { _rawSink = sink; }
     // True when the new packet was handed to the radio or retained in the bounded TX queue.
     bool sendRaw(const uint8_t* data, size_t len) { return accepted(send_outgoing(data, len)); }
-    bool sendLeased(const uint8_t* data, size_t len, const handheld::TxLease& lease) {
+    bool sendLeased(const uint8_t* data, size_t len, const handheld::TxLease& lease) override {
         return accepted(offerLeased(data, len, lease));
     }
-    handheld::TxOffer offerLeased(const uint8_t* data, size_t len, const handheld::TxLease& lease) {
+    handheld::TxOffer offerLeased(const uint8_t* data, size_t len, const handheld::TxLease& lease) override {
         return send_outgoing(data, len, &lease);
     }
-    using TxValidator = bool (*)(void*, const handheld::TxLease&);
+    using TxValidator = LoRaSlotDriver::TxValidator;
     // Owner-only; clearing the validator discards queued protocol frames before
     // its context can be destroyed. An already-started split burst finishes.
-    void setTxValidator(void* context, TxValidator validator);
+    void setTxValidator(void* context, TxValidator validator) override;
     // Drops old receipts through the old hook before changing ownership.
-    void setReceiptHook(void* context, handheld::TxReceiptHook hook);
-    uint32_t generation() const { return _generation; }
+    void setReceiptHook(void* context, handheld::TxReceiptHook hook) override;
+    uint32_t generation() const override { return _generation; }
 
     float airtimeUtilization() const;
 
     // Last received packet signal quality
-    int lastRxRssi() const { return _lastRxRssi; }
-    float lastRxSnr() const { return _lastRxSnr; }
-    bool isOnline() const { return _online && _radio && _radio->isRadioOnline(); }
+    int lastRxRssi() const override { return _lastRxRssi; }
+    float lastRxSnr() const override { return _lastRxSnr; }
+    bool isOnline() const override { return _online && _radio && _radio->isRadioOnline(); }
     // Owner-only settings continuation. Existing packets retain their payloads
     // and receipts; new admission returns Blocked until retune or cancellation.
     void pauseForReconfigure(bool pause) { _reconfigurePending = pause; }
@@ -74,9 +76,9 @@ public:
     }
     unsigned long splitRxTimeoutMs() const { return _splitRxTimeoutMs; }
     float singleFrameAirtimeMs() const { return _singleFrameAirtimeMs; }
-    uint32_t bitrate() const { return _bitrate; }
+    uint32_t bitrate() const override { return _bitrate; }
     // Conservative local queue + packet pacing allowance, for protocol retry timers.
-    uint32_t txWaitBudgetMs(uint32_t packets) const;
+    uint32_t txWaitBudgetMs(uint32_t packets) const override;
 
 private:
     static bool accepted(handheld::TxOffer offer) {

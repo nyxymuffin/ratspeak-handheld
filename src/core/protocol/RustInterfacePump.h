@@ -6,7 +6,7 @@
 #include "protocol/RustClock.h"
 #include "transport/TxLease.h"
 
-class LoRaInterface;
+class LoRaSlotDriver;
 class TCPClientInterface;
 class RnsAutoInterface;
 class WiFiInterface;
@@ -60,7 +60,8 @@ public:
 
     void setSink(RustPumpSink* sink) { _sink = sink; }
 
-    void attachLoRa(LoRaInterface* lora);
+    // Slot 0: the native LoRaInterface or the MeshCore tunnel (LoRaSlotDriver.h).
+    void attachLoRa(LoRaSlotDriver* lora);
     int attachTcp(TCPClientInterface* tcp);  // returns interface id, -1 if full
     void detachTcpAll();
     void attachAuto(RnsAutoInterface* autoIface);  // driver lifecycle stays main-owned
@@ -122,7 +123,7 @@ private:
     rs_handheld_rns_t* _ctx = nullptr;
     RustClock* _clock = nullptr;
     RustPumpSink* _sink = nullptr;
-    LoRaInterface* _lora = nullptr;
+    LoRaSlotDriver* _lora = nullptr;
     TCPClientInterface* _tcp[MAX_TCP] = {};
     size_t _tcpCount = 0;
     RnsAutoInterface* _auto = nullptr;

@@ -44,7 +44,7 @@ public:
     // Retains the context and the caller-owned radio until both message owners
     // and the already-started radio burst settle. No RX, scheduler or metadata
     // retries run here. The caller still polls MessageStore and result consumers.
-    void beginMaintenance(LoRaInterface& radio);
+    void beginMaintenance(LoRaSlotDriver& radio);
     void pollMaintenance();
     bool maintenanceDrained() const;
     bool maintenanceFailed() const;
@@ -145,7 +145,7 @@ private:
     bool _enginesUp = false;
     enum AnnounceTiming : uint8_t { PathPending = 1, NormalPending = 2, HasPathResponseTime = 4 };
     uint8_t _announceTiming = 0; // Uses the existing alignment gap after lifecycle flags.
-    LoRaInterface* _maintenanceRadio = nullptr;
+    LoRaSlotDriver* _maintenanceRadio = nullptr;
 
     uint8_t _identityHash[16] = {};
     uint8_t _destHash[16] = {};

@@ -8,7 +8,7 @@
 #include "storage/FlashStore.h"
 #include "storage/SDStore.h"
 #include "storage/MessageStore.h"
-#include "transport/LoRaInterface.h"
+#include "transport/LoRaSlotDriver.h"
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 #include <string.h>
@@ -286,7 +286,7 @@ void ProtocolRuntime::pollReceive() {
     _lxmf.loop();
 }
 
-void ProtocolRuntime::beginMaintenance(LoRaInterface& radio) {
+void ProtocolRuntime::beginMaintenance(LoRaSlotDriver& radio) {
     handheld::assertDeviceOwner();
     if (_maintenanceRadio) {
         configASSERT(_maintenanceRadio == &radio);
