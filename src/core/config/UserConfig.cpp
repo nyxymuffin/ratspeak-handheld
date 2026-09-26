@@ -164,6 +164,9 @@ void UserConfig::sanitizeMeshCore(MeshCoreSettings& mc) {
     mc.codingRate = constrain(mc.codingRate, 5, 8);
     mc.txPower = constrain(mc.txPower, -9, 22);
     mc.pathHashSize = constrain(mc.pathHashSize, 1, 3);
+    mc.announceHoldS = constrain(mc.announceHoldS, 0UL, 86400UL);
+    mc.pathRequestHoldS = constrain(mc.pathRequestHoldS, 0UL, 86400UL);
+    mc.airtimeBudgetKbH = constrain(mc.airtimeBudgetKbH, 0, 200);
 }
 
 void UserConfig::sanitizeSettings(UserSettings& settings) {
@@ -282,6 +285,9 @@ bool UserConfig::parseJson(const char* json, size_t length, bool persisted, bool
         mc.txPower         = constrain(doc["mc_txp"] | (int)mc.txPower, -9, 22);
         mc.pathHashSize    = constrain(doc["mc_path_hash"] | (int)mc.pathHashSize, 1, 3);
         mc.floodChannel    = doc["mc_flood"] | mc.floodChannel;
+        mc.announceHoldS    = constrain(doc["mc_ann_s"] | (long)mc.announceHoldS, 0L, 86400L);
+        mc.pathRequestHoldS = constrain(doc["mc_pr_s"] | (long)mc.pathRequestHoldS, 0L, 86400L);
+        mc.airtimeBudgetKbH = constrain(doc["mc_air_kb"] | (int)mc.airtimeBudgetKbH, 0, 200);
         if (!assignConfigString(mc.nodeName, doc["mc_name"] | "") ||
             !assignConfigString(mc.channelName, doc["mc_ch_name"] | "") ||
             !assignConfigString(mc.channelPsk, doc["mc_ch_psk"] | "")) return memoryFailure();
@@ -434,6 +440,9 @@ String UserConfig::serializeToJson(bool persisted, size_t limit, bool* unavailab
     doc["mc_txp"]       = mc.txPower;
     doc["mc_path_hash"] = mc.pathHashSize;
     doc["mc_flood"]     = mc.floodChannel;
+    doc["mc_ann_s"]     = mc.announceHoldS;
+    doc["mc_pr_s"]      = mc.pathRequestHoldS;
+    doc["mc_air_kb"]    = mc.airtimeBudgetKbH;
     doc["mc_name"]      = mc.nodeName;
     doc["mc_ch_name"]   = mc.channelName;
     doc["mc_ch_psk"]    = mc.channelPsk;

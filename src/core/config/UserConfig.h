@@ -60,6 +60,11 @@ struct MeshCoreSettings {
     String nodeName;               // empty: use the Ratspeak display name
     String channelName;
     String channelPsk;             // base64 16/32-byte key; secret, entered on device
+    // Tunnel airtime policy (0 = off), same meaning and units as rns-gateway's
+    // announce_rate_s / path_req_rate_s / air_budget_kb_h.
+    uint32_t announceHoldS = 600;      // per destination
+    uint32_t pathRequestHoldS = 60;    // per queried destination, after a 60 s burst
+    uint16_t airtimeBudgetKbH = 60;    // KB per rolling hour
 };
 
 struct TCPEndpoint {

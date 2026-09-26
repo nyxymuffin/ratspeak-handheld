@@ -84,4 +84,7 @@ private:
 // (MeshCore identifies a channel by its key), so an empty one gets a default.
 Config configFrom(const UserSettings& settings);
 
+// Settings -> tunnel airtime policy (seconds and KB/h to ms and bytes; 0 = off).
+tunnel::TunnelInterface::Settings tunnelSettingsFrom(const MeshCoreSettings& settings);
+
 } // namespace handheld::meshcore

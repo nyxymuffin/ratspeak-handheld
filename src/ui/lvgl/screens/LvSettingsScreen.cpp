@@ -117,6 +117,9 @@ uint32_t meshcoreFingerprint(const MeshCoreSettings& mc) {
     mixString(mc.nodeName);
     mixString(mc.channelName);
     mixString(mc.channelPsk);
+    mix(&mc.announceHoldS, sizeof(mc.announceHoldS));
+    mix(&mc.pathRequestHoldS, sizeof(mc.pathRequestHoldS));
+    mix(&mc.airtimeBudgetKbH, sizeof(mc.airtimeBudgetKbH));
     return hash;
 }
 
@@ -205,7 +208,8 @@ bool LvSettingsScreen::settingNeedsReboot(const SettingItem& item) const {
         labelEq(item.label, "Spread Factor") || labelEq(item.label, "Bandwidth") ||
         labelEq(item.label, "Coding Rate") || labelEq(item.label, "Path Hash") ||
         labelEq(item.label, "Channel Reach") || labelEq(item.label, "Node Name") ||
-        labelEq(item.label, "Channel PSK"))) return loraSettingsChanged();
+        labelEq(item.label, "Channel PSK") || labelEq(item.label, "Announce Hold") ||
+        labelEq(item.label, "Path Req Hold") || labelEq(item.label, "Airtime Budget"))) return loraSettingsChanged();
     if (labelEq(item.label, "WiFi Profile")) return s.wifiSTASelected != _rebootSnap.wifiSTASelected;
     if (isWiFiSSIDLabel(item.label) || isWiFiPasswordLabel(item.label)) return interfaceSettingsChanged();
     if (labelEq(item.label, "Scan Networks") || labelEq(item.label, "Forget Network")) return interfaceSettingsChanged();
@@ -2345,6 +2349,24 @@ void LvSettingsScreen::addMeshCoreItems(UserSettings& s, int& idx) {
     };
     psk.maxTextLen = handheld::meshcore_rules::kPsk256Length;
     _items.push_back(psk);
+    idx++;
+
+    // Advanced: the tunnel's airtime policy (same meaning as rns-gateway's
+    // portal settings). 0 turns each one off.
+    _items.push_back({"Announce Hold", SettingType::INTEGER,
+        [&mc]() { return (int)(mc.announceHoldS / 60); },
+        [&mc](int v) { mc.announceHoldS = (uint32_t)v * 60; },
+        [](int v) { return v == 0 ? String("Off") : String(v) + " min"; }, 0, 1440, 1});
+    idx++;
+    _items.push_back({"Path Req Hold", SettingType::INTEGER,
+        [&mc]() { return (int)mc.pathRequestHoldS; },
+        [&mc](int v) { mc.pathRequestHoldS = (uint32_t)v; },
+        [](int v) { return v == 0 ? String("Off") : String(v) + " s"; }, 0, 3600, 10});
+    idx++;
+    _items.push_back({"Airtime Budget", SettingType::INTEGER,
+        [&mc]() { return (int)mc.airtimeBudgetKbH; },
+        [&mc](int v) { mc.airtimeBudgetKbH = (uint16_t)v; },
+        [](int v) { return v == 0 ? String("Unlimited") : String(v) + " KB/h"; }, 0, 200, 5});
     idx++;
 }
 #endif

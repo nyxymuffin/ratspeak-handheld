@@ -55,6 +55,14 @@ Config configFrom(const UserSettings& settings) {
     return config;
 }
 
+tunnel::TunnelInterface::Settings tunnelSettingsFrom(const MeshCoreSettings& mc) {
+    tunnel::TunnelInterface::Settings t;
+    t.throttle.announceIntervalMs = mc.announceHoldS * 1000UL;        // <= 86400 s, fits 32 bits
+    t.throttle.pathRequestIntervalMs = mc.pathRequestHoldS * 1000UL;
+    t.airtimeBytesPerHour = uint32_t(mc.airtimeBudgetKbH) * 1024UL;
+    return t;
+}
+
 bool Personality::begin(const UserSettings& settings) {
     const Config config = configFrom(settings);
     memcpy(_nodeName, config.nodeName, sizeof(_nodeName));
@@ -72,8 +80,8 @@ bool Personality::begin(const UserSettings& settings) {
             return true;
         }
         _tunnel = new (memory) tunnel::TunnelInterface(_link);
-        _tunnel->configure(tunnel::TunnelInterface::Settings{});
     }
+    _tunnel->configure(tunnelSettingsFrom(settings.meshcore));
     _tunnel->start();
     return true;
 }
