@@ -43,6 +43,25 @@ constexpr float BATTERY_CHARGE_THRESHOLD_MAX = 4.30f;
 constexpr float BATTERY_FULL_VOLTAGE_MIN = 3.50f;
 constexpr float BATTERY_FULL_VOLTAGE_MAX = 4.20f;
 
+// Which protocol owns the LoRa radio. RNode is Ratspeak's native Reticulum
+// LoRa interface; MeshCore carries traffic through a MeshCore mesh (T-Pager
+// builds with RATSPEAK_MESHCORE only). Changing it needs a reboot.
+enum class LoRaMode : uint8_t { RNode = 0, MeshCore = 1 };
+
+// MeshCore personality settings. Defaults are the US MeshCore preset.
+struct MeshCoreSettings {
+    uint32_t frequency = 910525000;
+    uint32_t bandwidth = 62500;
+    uint8_t spreadingFactor = 7;
+    uint8_t codingRate = 5;        // 4/5
+    int8_t txPower = 22;
+    uint8_t pathHashSize = 1;      // bytes per hop, 1-3 (MeshCore spec section 3)
+    bool floodChannel = false;     // false: zero-hop only; true: repeaters may carry it
+    String nodeName;               // empty: use the Ratspeak display name
+    String channelName;
+    String channelPsk;             // base64 16/32-byte key; secret, entered on device
+};
+
 struct TCPEndpoint {
     String host;
     uint16_t port = TCP_DEFAULT_PORT;
@@ -59,6 +78,8 @@ struct UserSettings {
     int8_t loraTxPower = LORA_DEFAULT_TX_POWER;
     long loraPreamble = LORA_DEFAULT_PREAMBLE;
     bool loraEnabled = true;
+    LoRaMode loraMode = LoRaMode::RNode;
+    MeshCoreSettings meshcore;
 
     // WiFi
     RatWiFiMode wifiMode = BOARD_DEFAULT_WIFI_MODE;
@@ -192,6 +213,7 @@ private:
     bool _namePending = false;
     Source _source = Source::Absent;
     static void sanitizeSettings(UserSettings& settings);
+    static void sanitizeMeshCore(MeshCoreSettings& meshcore);
 
     UserSettings _settings;
     bool _mirrorPending = false;

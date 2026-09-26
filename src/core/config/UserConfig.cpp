@@ -26,6 +26,9 @@ bool sameConfigStrings(const UserSettings& left, const UserSettings& right) {
         !sameConfigString(left.wifiAPPassword, right.wifiAPPassword) ||
         !sameConfigString(left.autoIfaceGroupId, right.autoIfaceGroupId) ||
         !sameConfigString(left.displayName, right.displayName) ||
+        !sameConfigString(left.meshcore.nodeName, right.meshcore.nodeName) ||
+        !sameConfigString(left.meshcore.channelName, right.meshcore.channelName) ||
+        !sameConfigString(left.meshcore.channelPsk, right.meshcore.channelPsk) ||
         left.wifiSTANetworks.size() != right.wifiSTANetworks.size() ||
         left.tcpConnections.size() != right.tcpConnections.size()) return false;
     for (size_t i = 0; i < left.wifiSTANetworks.size(); ++i)
@@ -49,7 +52,9 @@ bool configCopyFits(const UserSettings& settings, size_t& charge) {
         return true;
     };
     if (!take(settings.wifiAPSSID) || !take(settings.wifiAPPassword) ||
-        !take(settings.autoIfaceGroupId) || !take(settings.displayName)) return false;
+        !take(settings.autoIfaceGroupId) || !take(settings.displayName) ||
+        !take(settings.meshcore.nodeName) || !take(settings.meshcore.channelName) ||
+        !take(settings.meshcore.channelPsk)) return false;
     for (const auto& network : settings.wifiSTANetworks)
         if (!take(network.ssid) || !take(network.password)) return false;
     for (const auto& endpoint : settings.tcpConnections) if (!take(endpoint.host)) return false;
@@ -150,6 +155,17 @@ void UserConfig::swap(UserConfig& other) noexcept {
     std::swap(_recoveryRequired, other._recoveryRequired);
 }
 
+void UserConfig::sanitizeMeshCore(MeshCoreSettings& mc) {
+    const MeshCoreSettings defaults;
+    if (!loRaFrequencyBand(mc.frequency)) mc.frequency = defaults.frequency;
+    mc.bandwidth = RadioBandwidth::normalize(mc.bandwidth);
+    // MeshCore's packet scoring is defined for SF7-SF12 only.
+    mc.spreadingFactor = constrain(mc.spreadingFactor, 7, 12);
+    mc.codingRate = constrain(mc.codingRate, 5, 8);
+    mc.txPower = constrain(mc.txPower, -9, 22);
+    mc.pathHashSize = constrain(mc.pathHashSize, 1, 3);
+}
+
 void UserConfig::sanitizeSettings(UserSettings& settings) {
     if (settings.radioRegion >= REGION_COUNT) settings.radioRegion = REGION_AMERICAS;
     // Region selects a default; it must not override a supported manual tune,
@@ -162,6 +178,8 @@ void UserConfig::sanitizeSettings(UserSettings& settings) {
     settings.loraCR = constrain(settings.loraCR, 5, 8);
     settings.loraTxPower = constrain(settings.loraTxPower, -9, 22);
     settings.loraPreamble = constrain(settings.loraPreamble, 6L, 65L);
+    if (settings.loraMode != LoRaMode::MeshCore) settings.loraMode = LoRaMode::RNode;
+    sanitizeMeshCore(settings.meshcore);
     settings.batteryDisplay = constrain((int)settings.batteryDisplay,
         (int)BATTERY_DISPLAY_PERCENT, (int)BATTERY_DISPLAY_BAR);
     settings.batteryModel = constrain((int)settings.batteryModel,
@@ -254,6 +272,19 @@ bool UserConfig::parseJson(const char* json, size_t length, bool persisted, bool
         parsed.loraTxPower   = constrain(doc["lora_txp"] | (int)LORA_DEFAULT_TX_POWER, -9, 22);
         parsed.loraPreamble  = doc["lora_pre"]  | (long)LORA_DEFAULT_PREAMBLE;
         parsed.loraEnabled   = doc["lora_on"]   | true;
+        // Absent keys (configs saved before MeshCore support) keep the defaults.
+        parsed.loraMode = (doc["lora_mode"] | 0) == 1 ? LoRaMode::MeshCore : LoRaMode::RNode;
+        MeshCoreSettings& mc = parsed.meshcore;
+        mc.frequency       = doc["mc_freq"] | mc.frequency;
+        mc.bandwidth       = constrain(doc["mc_bw"] | (long)mc.bandwidth, 7800L, 500000L);
+        mc.spreadingFactor = constrain(doc["mc_sf"] | (int)mc.spreadingFactor, 7, 12);
+        mc.codingRate      = constrain(doc["mc_cr"] | (int)mc.codingRate, 5, 8);
+        mc.txPower         = constrain(doc["mc_txp"] | (int)mc.txPower, -9, 22);
+        mc.pathHashSize    = constrain(doc["mc_path_hash"] | (int)mc.pathHashSize, 1, 3);
+        mc.floodChannel    = doc["mc_flood"] | mc.floodChannel;
+        if (!assignConfigString(mc.nodeName, doc["mc_name"] | "") ||
+            !assignConfigString(mc.channelName, doc["mc_ch_name"] | "") ||
+            !assignConfigString(mc.channelPsk, doc["mc_ch_psk"] | "")) return memoryFailure();
 
         // WiFi mode — migrate from legacy wifi_enabled bool
         int mode = doc["wifi_mode"] | -1;
@@ -394,6 +425,18 @@ String UserConfig::serializeToJson(bool persisted, size_t limit, bool* unavailab
     doc["lora_txp"]  = _settings.loraTxPower;
     doc["lora_pre"]  = _settings.loraPreamble;
     doc["lora_on"]   = _settings.loraEnabled;
+    doc["lora_mode"] = static_cast<int>(_settings.loraMode);
+    const MeshCoreSettings& mc = _settings.meshcore;
+    doc["mc_freq"]      = mc.frequency;
+    doc["mc_bw"]        = mc.bandwidth;
+    doc["mc_sf"]        = mc.spreadingFactor;
+    doc["mc_cr"]        = mc.codingRate;
+    doc["mc_txp"]       = mc.txPower;
+    doc["mc_path_hash"] = mc.pathHashSize;
+    doc["mc_flood"]     = mc.floodChannel;
+    doc["mc_name"]      = mc.nodeName;
+    doc["mc_ch_name"]   = mc.channelName;
+    doc["mc_ch_psk"]    = mc.channelPsk;
 
     doc["wifi_mode"] = (int)_settings.wifiMode;
     doc["wifi_restore_mode"] = (int)_settings.wifiRestoreMode;

@@ -1,4 +1,5 @@
 #include "SettingsTransaction.h"
+#include "config/MeshCoreRules.h"
 #include "util/DisplayName.h"
 #include "runtime/TaskOwner.h"
 #include <cstring>
@@ -36,6 +37,21 @@ bool validAPPassword(const String& value) {
     return true;
 }
 
+const char* changedMeshCoreError(const MeshCoreSettings& saved, const MeshCoreSettings& edited) {
+    using namespace handheld::meshcore_rules;
+    const auto changedAndInvalid = [](const String& before, const String& after,
+                                      bool (*valid)(const char*, size_t)) {
+        return !sameBytes(before, after) && !valid(after.c_str(), after.length());
+    };
+    if (changedAndInvalid(saved.nodeName, edited.nodeName, validName))
+        return "MeshCore name: 0-31 printable bytes";
+    if (changedAndInvalid(saved.channelName, edited.channelName, validName))
+        return "Channel name: 0-31 printable bytes";
+    if (changedAndInvalid(saved.channelPsk, edited.channelPsk, validChannelPsk))
+        return "Channel PSK: base64 of a 16 or 32 byte key";
+    return nullptr;
+}
+
 const char* changedCredentialError(const UserSettings& saved, const UserSettings& edited) {
     if (!sameBytes(saved.wifiAPSSID, edited.wifiAPSSID) && !fitsWiFiString(edited.wifiAPSSID, 32))
         return "AP SSID: 0-32 bytes; no NUL";
@@ -56,7 +72,7 @@ const char* changedCredentialError(const UserSettings& saved, const UserSettings
         // shared SDK field/C-string bound, leaving auth-specific checks to it.
         if (!unchanged && !fitsWiFiString(network.password, 64)) return "STA key: 0-64 bytes; no NUL";
     }
-    return nullptr;
+    return changedMeshCoreError(saved.meshcore, edited.meshcore);
 }
 }
 
