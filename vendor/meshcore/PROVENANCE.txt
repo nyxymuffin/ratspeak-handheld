@@ -1,0 +1,74 @@
+MeshCore (vendored subset)
+==========================
+
+Upstream:   https://github.com/meshcore-dev/MeshCore
+Commit:     e94125987ed87497e706a0b54d1e80c709343980 (main, 2026-09-20)
+Release:    newest tag at that commit's time is companion-v1.17.1; library.json says 1.10.0
+Licence:    MIT (license.txt). lib/ed25519 is zlib (lib/ed25519/license.txt),
+            Copyright (c) 2015 Orson Peters.
+
+Why a subset
+------------
+Only the core mesh, BaseChatMesh and ed25519 are used. Upstream's own
+library.json compiles every helper, including RadioLib wrappers, CommonCLI,
+sensors and board support, which pull in RadioLib, RTClib, CayenneLPP and
+<target.h>. None of those are wanted here: the radio is driven through
+Ratspeak's own SX1262 driver.
+
+Local changes
+-------------
+- library.json is local (not upstream): it builds only the files below.
+- Every other file is byte-identical to the upstream blob at the commit above.
+  Verify from this directory with:  sha256sum -c --ignore-missing PROVENANCE.txt
+  (only the hash lines below are read; the prose lines are ignored with a warning).
+
+External dependencies (pinned in platformio.ini [tpager_base] lib_deps)
+------------------------------------------------------------------------
+- rweather/Crypto 0.4.0   AES, SHA256, Ed25519 verify (Utils.cpp, Packet.cpp, Identity.cpp)
+- densaugeo/base64 1.4.0  channel PSK decoding (BaseChatMesh.cpp, MAX_GROUP_CHANNELS)
+
+Files (sha256, path)
+--------------------
+385c8e4759bcb63924c2e593b9c4621f1cd6176942d3a52176c00dbcf2b9761d  lib/ed25519/add_scalar.c
+9022487fe9120bbd4dc35dc717efc2177d22222c275ef46c9463653bf03026b2  lib/ed25519/ed_25519.h
+71082937da43def6ecaf7811c23410bd8ea763969dfec67383f8129b12b1926d  lib/ed25519/fe.c
+0476ae2ebb86978d1e0b9fbeb63dcddd7566d6b74806db47dda7688df74aaafb  lib/ed25519/fe.h
+451fd529865e7fc69156f4cbe7c548857704ae4913768ad9ed7103656efdfc17  lib/ed25519/fixedint.h
+c3bb834817edea83d843828a75af19867b93144d15140eadfd9784d40cf11409  lib/ed25519/ge.c
+b16be2ea1731d9212933e7beeaef6882145fdcdaebdff9996efb5cf97faa2651  lib/ed25519/ge.h
+885157d0d3a635e405669f621a2c6ee24d48d8ee2b39f097f9a642681fe164a4  lib/ed25519/key_exchange.c
+9639f460c01191b738a4e3e206c5ee6bd232591b68f920ba3b097de7b80bbf77  lib/ed25519/keypair.c
+f68d76b9c1c2271422e55134ea94cf71f2ac3fc3ed6a7ec6b83a1a0538753214  lib/ed25519/license.txt
+c7d63a8b7ecd7bc6a3ac2b826a540a69dee0fc7e8bf3b00ef5dd98ce00a7c224  lib/ed25519/precomp_data.h
+c1bdb840416b34e79ceb7472d1a4ac4b1407c47b4c982cad981c72142ef42407  lib/ed25519/sc.c
+b0ef537b4d4dad7bd2910e2a663a02a7ac25b473511a929c3c609d82f9bdf87d  lib/ed25519/sc.h
+b12cfc7b3099788a58ba5fa8def57cc4744f968978b9c561c084ee1838ae3cb1  lib/ed25519/seed.c
+b34128b950036777c299943d624bd830a234a65932c394fdf455e4948258fb6d  lib/ed25519/sha512.c
+647ed5784d4dcd682b9c42add2e39107582efb4df9e1362c8e5120613eb9a0ce  lib/ed25519/sha512.h
+1f28f5864ee084c9d624d73f00f45b2b82c093c1e775306ffe43671e3b76d425  lib/ed25519/sign.c
+18c43d45e99ec4a922f3ed3b13eeb0309df62324c7ee9ca707eb5d65d8b66ad7  lib/ed25519/verify.c
+3426328fb2c024c0374ec18e6f587bf0f35782bf04c5d3e90b52d282b156489d  license.txt
+6dd0103b5760898c2c9d07f64f203e8501645b44338544dfa9b7f041feb67db1  src/Dispatcher.cpp
+a137dde32fce21a29101773aa0019d73bb722050374a7d48c179484a48d47974  src/Dispatcher.h
+ba1b2026117c4615f2064ea0de1568ca57008348b94021dec77d342db23fbd7e  src/helpers/AdvertDataHelpers.cpp
+c871a8e7e0e366c357da52e2994e009d4e7c14cd714b06ea5632b82bccf6dc0c  src/helpers/AdvertDataHelpers.h
+940fed68792ad34bd68bd63f65133ef25b019d960cc04720361b6ef944f131c0  src/helpers/ArduinoHelpers.h
+c0f33e7bc2c7ff8acab9969121af5fc7328059a9b3159b15dfa8a8bd6a50c6a9  src/helpers/BaseChatMesh.cpp
+adfc1879f6ba828ba6a2ddd923a6009a3a1e3a13c65b1d05eae318afab9c714d  src/helpers/BaseChatMesh.h
+e2d894feb97311b7dc887311acb0884860f3d4b2c59ff4c7005697a524a82d76  src/helpers/ChannelDetails.h
+9ec3c199d73871174c73a1cecfd3c4293fda3be2628b96370d6063c107484e18  src/helpers/ContactInfo.h
+c4bf90c3340990817121ebdd3bf5492d9d6c4f5a6861b623faeaed8ed5991cad  src/helpers/SimpleMeshTables.h
+d6851c9e3191300e838ee9c3b46a43b5f9a42f15ff16173fba66d1ba5fa888cd  src/helpers/StaticPoolPacketManager.cpp
+da5b8a568199acdfbd4e6683a4ac415315e829ca84231e6c666cc3e55476d45b  src/helpers/StaticPoolPacketManager.h
+b848b13f665a976980d4b6dc8262e400033fbac726c519c606fa8e46f06228d5  src/helpers/TxtDataHelpers.cpp
+1800f4167dccbb4e105ccd4733ea992420a835782870f1d5898fd948bed1ef41  src/helpers/TxtDataHelpers.h
+df7d355f04da79f5a5efe5df594c8ad25fbec624ba50aea31aad658abf7b2caa  src/helpers/UTF8Helpers.h
+e94463f11b804cf2f670ccdb7ccb7689b0cf845ef84a8a6078a60c3051499822  src/Identity.cpp
+d5ec3c37606c636776571419282d845f2bcc1f3996b271eb4141558eaf0a15fc  src/Identity.h
+63cffc2438c1537dbe73c993c2331ae91b3adb14a6cad78222a939d5c73f757f  src/Mesh.cpp
+1d89b7fd54b5316179a9e26cbc38c403f5d34bb93a7133fc7486a959663683d6  src/Mesh.h
+4db7a707fe9915919a5a802021d3523d7e2e12c33156f9de5d5f685b64b0185f  src/MeshCore.h
+6f401a4abe57b67aae6ce54172a8cd5cfa64f801c2186894d4bf28aaf30b52e0  src/Packet.cpp
+cd29311f7a9b0e52dc9c55f599718bfdcbdf3cc9b96ed247099c9d72ba774e99  src/Packet.h
+5f84b666e7c73744cb8dedc60b6749bdabfd0fbbb5b988f36a6b4bf4b3997ed8  src/Utils.cpp
+76b0d60b27610f186dff1765aa4be72de806208f4930f8000bfea3d7b917d885  src/Utils.h

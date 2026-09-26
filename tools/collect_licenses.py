@@ -97,6 +97,42 @@ SOURCE_NOTICES = {
         "notice_sha256": "57a974c57b6f105b9d1fc2198f4576fb0b943c3847fb6e5c83ba7eaa9237043e",
     },
 }
+# RNS-over-MeshCore tunnel (T-Pager only): a vendored MeshCore subset and the two
+# registry libraries it needs. See vendor/meshcore/PROVENANCE.txt. Neither registry
+# library is tagged upstream, so the commit that set each released version is pinned.
+MESHCORE_REF = "e94125987ed87497e706a0b54d1e80c709343980"
+MESHCORE_CRYPTO_REF = "61e84b220fc8dfe83c2e04716d0fa88cfaddadf6"  # rweather/arduinolibs, Crypto 0.4.0
+MESHCORE_BASE64_REF = "ac168f5fa2865de855384f6a2d61444ce7d92c27"  # densaugeo/base64_arduino, 1.4.0
+# (name, version) identities: "Crypto" and "base64" are generic names.
+MESHCORE_COMPONENTS = {("MeshCore", MESHCORE_REF), ("MeshCore: ed25519", MESHCORE_REF),
+                       ("Crypto", "0.4.0"), ("base64", "1.4.0")}
+MESHCORE_LIB_DEPS = ["rweather/Crypto@0.4.0", "densaugeo/base64@1.4.0", "symlink://vendor/meshcore"]
+MESHCORE_VENDOR = ROOT / "vendor/meshcore"
+MESHCORE_LOCAL_FILES = {"PROVENANCE.txt", "library.json"}
+
+
+def meshcore_linked(platformio: dict) -> bool:
+    """True when any PlatformIO section of any ini references the vendored MeshCore."""
+    return any("vendor/meshcore" in value
+               for sections in platformio.values() for section in sections.values() for value in section.values())
+
+
+def check_meshcore_vendor() -> None:
+    """The vendored tree must match PROVENANCE.txt exactly: no edits, no extra files."""
+    listed = {}
+    for line in (MESHCORE_VENDOR / "PROVENANCE.txt").read_text().splitlines():
+        match = re.fullmatch(r"([0-9a-f]{64})  (\S+)", line)
+        if match:
+            listed[match[2]] = match[1]
+    if MESHCORE_REF not in (MESHCORE_VENDOR / "PROVENANCE.txt").read_text():
+        raise ValueError("vendor/meshcore/PROVENANCE.txt does not name the pinned MeshCore commit")
+    present = {p.relative_to(MESHCORE_VENDOR).as_posix() for p in MESHCORE_VENDOR.rglob("*") if p.is_file()}
+    if present - MESHCORE_LOCAL_FILES != set(listed):
+        raise ValueError("vendor/meshcore files differ from PROVENANCE.txt: "
+                         + ", ".join(sorted((present - MESHCORE_LOCAL_FILES) ^ set(listed))))
+    for path, expected in listed.items():
+        if digest((MESHCORE_VENDOR / path).read_bytes()) != expected:
+            raise ValueError(f"vendor/meshcore/{path} differs from its pinned upstream bytes")
 
 
 def digest(data: bytes) -> str:
@@ -269,6 +305,36 @@ class Collector:
         self.local_notices(component, chosen, extras=extras)
         return component, chosen
 
+    def pio_registry_library(self, owner, name, version, source, boards):
+        """A registry-installed library whose upstream has no tag for the release."""
+        for path in sorted((ROOT / ".pio/libdeps").glob(f"*/{name}")):
+            meta = path / ".piopm"
+            if not meta.is_file():
+                continue
+            meta = json.loads(meta.read_text())
+            if meta.get("version") == version and meta.get("spec", {}).get("owner") == owner:
+                return self.component(name, version, source, boards, ["standalone"]), path
+        raise ValueError(f"missing exact PlatformIO dependency: {owner}/{name}@{version}")
+
+    def meshcore(self):
+        check_meshcore_vendor()
+        vendor = MESHCORE_VENDOR
+        source = f"https://github.com/meshcore-dev/MeshCore/tree/{MESHCORE_REF}"
+        mesh = self.component("MeshCore", MESHCORE_REF, source, ["tpager"], ["standalone"],
+                              "Vendored subset; see vendor/meshcore/PROVENANCE.txt.")
+        self.file(mesh, vendor, "license.txt")
+        ed25519 = self.component("MeshCore: ed25519", MESHCORE_REF, source, ["tpager"], ["standalone"],
+                                 "Orson Peters' ed25519, vendored by MeshCore under lib/ed25519.")
+        self.file(ed25519, vendor, "lib/ed25519/license.txt")
+        crypto, crypto_root = self.pio_registry_library(
+            "rweather", "Crypto", "0.4.0",
+            f"https://github.com/rweather/arduinolibs/tree/{MESHCORE_CRYPTO_REF}/libraries/Crypto", ["tpager"])
+        # The library ships no licence file; each source carries the MIT notice.
+        self.source_notices(crypto, crypto_root)
+        base64, base64_root = self.pio_registry_library(
+            "densaugeo", "base64", "1.4.0", f"https://github.com/densaugeo/base64_arduino/tree/{MESHCORE_BASE64_REF}", ["tpager"])
+        self.local_notices(base64, base64_root)
+
     def rust_crates(self):
         lock = tomllib.loads((ROOT / "protocol/Cargo.lock").read_text())
         metadata = json.loads(run("cargo", "metadata", "--locked", "--offline", "--format-version", "1",
@@ -320,6 +386,7 @@ class Collector:
         radio, _ = self.pio_library("RadioLib", "7.7.1", "jgromes/RadioLib",
             "ef715e1be6643ffb6cc585cde4c33770caf875b1", ["m9"])
         radio["modes"] = ["standalone"]
+        self.meshcore()
         for name, version, repo, ref in (
             ("M5GFX", "0.2.19", "m5stack/M5GFX", "53a7184601f3667b030ba141c58b87ce2acfaa2a"),
             ("M5Unified", "0.2.13", "m5stack/M5Unified", "a6256725481f1bc366655fa48cf03b6095e30ad1"),
@@ -521,6 +588,13 @@ def check_bundle(output=ROOT / "licenses", *, check_inputs=True):
     required = {"Arduino-ESP32", "ArduinoJson", "LovyanGFX", "lvgl", "M5GFX", "M5Unified", "M5Cardputer",
                 "IRremote", "Montserrat", "Font Awesome 5.9.0", "RNode radio drivers", "ESP-IDF SDK",
                 "Rust core, alloc and compiler-builtins", "Xtensa GCC and newlib runtimes"}
+    # With check_inputs the recorded inputs equal the live ini files, so this
+    # follows MeshCore wherever it is referenced; the vendored bytes must match too.
+    if meshcore_linked(manifest["inputs"]["platformio"]):
+        missing = MESHCORE_COMPONENTS - set(identities)
+        if missing:
+            raise ValueError("missing MeshCore notices: " + ", ".join(f"{n}@{v}" for n, v in sorted(missing)))
+        check_meshcore_vendor()
     required.update("ESP-IDF: " + name for name in ("lwIP", "mbedTLS", "ESP Wi-Fi binaries", "ESP PHY binaries",
         "ESP Bluetooth controller", "NimBLE", "TinyUSB", "SPIFFS", "nghttp2", "cJSON", "libsodium", "micro-ecc",
         "esp_littlefs 1.14.1", "littlefs", "protobuf-c"))
@@ -632,6 +706,45 @@ def refresh_source_notices(output: Path) -> None:
     check_bundle(output)
 
 
+def refresh_meshcore(output: Path) -> None:
+    """Add or refresh the T-Pager MeshCore tunnel notices offline, retaining other bytes.
+
+    Only the tpager_base PlatformIO pins and the collector may differ from the
+    previous inventory; any other dependency or toolchain change needs --refresh.
+    """
+    manifest = json.loads((output / "manifest.json").read_text())
+    current = input_pins()
+    previous = manifest["inputs"]
+    for key in set(current) | set(previous):
+        if key not in {"platformio", "collector_sha256"} and current.get(key) != previous.get(key):
+            raise ValueError(f"{key} changed; a MeshCore-only notice refresh is insufficient")
+    for ini in set(current["platformio"]) | set(previous["platformio"]):
+        now, before = current["platformio"].get(ini, {}), previous["platformio"].get(ini, {})
+        for section in set(now) | set(before):
+            if section != "tpager_base" and now.get(section) != before.get(section):
+                raise ValueError(f"{ini} [{section}] changed; a MeshCore-only notice refresh is insufficient")
+    # [tpager_base] may differ only by the MeshCore lines. Upstream leaves its lib_deps
+    # unset, which inherits [lvgl16_base] through `extends`.
+    now = current["platformio"]["platformio.ini"].get("tpager_base", {})
+    before = previous["platformio"]["platformio.ini"].get("tpager_base", {})
+    other = lambda s: [line for line in s.get("lib_deps", "${lvgl16_base.lib_deps}").splitlines()
+                       if line.strip() not in MESHCORE_LIB_DEPS]
+    if now.get("platform") != before.get("platform") or other(now) != other(before):
+        raise ValueError("platformio.ini [tpager_base] changed beyond the MeshCore pins; use --refresh")
+    check_bundle(output, check_inputs=False)
+    bundle = (output / "THIRD-PARTY.txt").read_bytes()
+    components = [c for c in manifest["components"] if (c["name"], c["version"]) not in MESHCORE_COMPONENTS]
+    for component in components:
+        for notice in component["notices"]:
+            notice["data"] = bundle[notice["offset"]:notice["offset"] + notice["length"]]
+    # Only ROOT-relative inputs (.pio/libdeps, vendor/) are read by Collector.meshcore().
+    collector = Collector(Path(), Path(), Path(), Path())
+    collector.meshcore()
+    components.extend(collector.components)
+    write_bundle(sorted(components, key=lambda c: (c["name"].lower(), c["version"])), output)
+    check_bundle(output)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
@@ -639,6 +752,7 @@ def main():
     mode.add_argument("--refresh", action="store_true", help="regenerate from installed exact dependencies and upstream notices")
     mode.add_argument("--refresh-lite", action="store_true", help="refresh only selected Lite Git notices offline; other dependency inputs must match")
     mode.add_argument("--refresh-source-notices", action="store_true", help="refresh declared source adaptations offline; all other dependency inputs must match")
+    mode.add_argument("--refresh-meshcore", action="store_true", help="refresh the T-Pager MeshCore tunnel notices offline; only tpager_base pins may differ")
     parser.add_argument("--output", type=Path, default=ROOT / "licenses")
     parser.add_argument("--platformio-home", type=Path, default=Path(os.environ.get("PLATFORMIO_CORE_DIR", str(Path.home() / ".platformio"))))
     parser.add_argument("--arduino-libraries", type=Path, default=Path.home() / "Documents/Arduino/libraries")
@@ -651,6 +765,8 @@ def main():
         refresh_lite(args.output)
     elif args.refresh_source_notices:
         refresh_source_notices(args.output)
+    elif args.refresh_meshcore:
+        refresh_meshcore(args.output)
     count = check_bundle(args.output)
     print(f"license bundle: PASS ({count} components; pinned inputs and notice checksums verified)")
 
