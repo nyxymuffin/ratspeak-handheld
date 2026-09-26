@@ -7,7 +7,7 @@ SRC_DIR := ../../../src/meshcore
 CONFIG_DIR := ../../../src/core/config
 BUILD := build
 
-TESTS := $(BUILD)/test_radio_policy $(BUILD)/test_settings_rules
+TESTS := $(BUILD)/test_radio_policy $(BUILD)/test_settings_rules $(BUILD)/test_tunnel_codec
 
 .PHONY: all test clean
 all: test

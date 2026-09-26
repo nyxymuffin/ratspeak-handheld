@@ -139,6 +139,7 @@ static void typesMatchSpecification() {
     CHECK(config.radio.spreadingFactor == 7);
     CHECK(config.radio.codingRate == 5);
     CHECK(config.channelPsk[0] == '\0');   // never a compiled-in key
+    CHECK(config.channelReach == ChannelReach::Flood);   // agreed default
 }
 
 int main() {

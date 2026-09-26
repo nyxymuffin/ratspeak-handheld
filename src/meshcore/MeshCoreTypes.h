@@ -26,6 +26,7 @@ enum class PathHashSize : uint8_t { OneByte = 1, TwoBytes = 2, ThreeBytes = 3 };
 // neighbours; Flood lets repeaters carry it across the mesh.
 enum class ChannelReach : uint8_t { ZeroHop, Flood };
 
+inline constexpr size_t kPublicKeySize = 32;    // Ed25519 (PUB_KEY_SIZE)
 inline constexpr size_t kNodeNameMax = 32;      // ChannelDetails/advert name buffer
 inline constexpr size_t kChannelNameMax = 32;   // ChannelDetails::name
 inline constexpr size_t kChannelPskMax = 48;    // base64 of a 32-byte key, plus NUL
@@ -48,7 +49,7 @@ struct Config {
     // runtime and stored with the settings; never compiled in.
     char channelPsk[kChannelPskMax] = {};
     PathHashSize pathHashSize = PathHashSize::OneByte;
-    ChannelReach channelReach = ChannelReach::ZeroHop;
+    ChannelReach channelReach = ChannelReach::Flood;
 };
 
 struct Status {

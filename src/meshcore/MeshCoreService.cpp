@@ -158,6 +158,13 @@ Status Service::status() const {
     return out;
 }
 
+bool Service::publicKey(uint8_t out[kPublicKeySize]) const {
+    static_assert(kPublicKeySize == PUB_KEY_SIZE, "MeshCoreTypes.h must track MeshCore.h");
+    if (!_node || !_identityReady) return false;
+    memcpy(out, _node->host.self_id.pub_key, kPublicKeySize);
+    return true;
+}
+
 bool Service::loadOrCreateIdentity(Node& node) {
     // A key file that exists but cannot be read is a fault, not a first boot:
     // replacing it would silently give this node a new identity on the mesh.

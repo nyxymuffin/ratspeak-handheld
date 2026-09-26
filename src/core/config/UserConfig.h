@@ -56,7 +56,7 @@ struct MeshCoreSettings {
     uint8_t codingRate = 5;        // 4/5
     int8_t txPower = 22;
     uint8_t pathHashSize = 1;      // bytes per hop, 1-3 (MeshCore spec section 3)
-    bool floodChannel = false;     // false: zero-hop only; true: repeaters may carry it
+    bool floodChannel = true;      // true: repeaters may carry it (default); false: zero-hop only
     String nodeName;               // empty: use the Ratspeak display name
     String channelName;
     String channelPsk;             // base64 16/32-byte key; secret, entered on device

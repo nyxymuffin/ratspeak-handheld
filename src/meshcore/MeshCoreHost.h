@@ -69,7 +69,7 @@ private:
 
     ChannelDetails* _channel = nullptr;
     PathHashSize _hashSize = PathHashSize::OneByte;
-    ChannelReach _reach = ChannelReach::ZeroHop;
+    ChannelReach _reach = ChannelReach::Flood;
     DataSink _sink = nullptr;
     void* _sinkContext = nullptr;
     uint32_t _dataReceived = 0;

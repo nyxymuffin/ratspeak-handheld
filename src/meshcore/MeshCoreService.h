@@ -46,6 +46,8 @@ public:
     bool sendAdvert(bool flood);
     void setDataSink(DataSink sink) { _sink = std::move(sink); }
     Status status() const;
+    // Copies this node's 32-byte MeshCore public key; false before the first begin().
+    bool publicKey(uint8_t out[kPublicKeySize]) const;
 
 private:
     struct Node;

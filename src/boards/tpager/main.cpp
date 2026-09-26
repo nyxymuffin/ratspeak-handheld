@@ -66,6 +66,7 @@
 #include "config/UserConfig.h"
 #include "config/SettingsTransaction.h"
 #include "audio/AudioNotify.h"
+#include "meshcore/MeshCorePersonality.h"
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <atomic>
@@ -112,6 +113,8 @@ LXMFManager lxmf;
 ProtocolRuntime protocolRuntime;
 ProtocolBackend* backend = &protocolRuntime;
 LoRaInterface rustLoraIface(&radio);  // pump-owned raw driver (id 0)
+// Alternative owner of the same radio when Settings > LoRa mode is MeshCore.
+handheld::meshcore::Personality meshcore(radio, flash);
 AnnounceManager* announceManager = nullptr;
 TcpClientSet tcpClients;
 UserConfig userConfig;
@@ -215,6 +218,9 @@ static void applyRadioSettingsToHardware(const UserSettings& s, const char* cont
         return;
     }
 
+    // In MeshCore mode the MeshCore service applies its own radio parameters.
+    if (s.loraMode == LoRaMode::MeshCore) return;
+
     applyRadioSettings(radio, s);
     radioOnline = radio.isRadioOnline();
     Serial.printf("[%s] Radio: %lu Hz, SF%d, BW%lu, CR4/%d, %d dBm, pre=%ld\n",
@@ -222,6 +228,17 @@ static void applyRadioSettingsToHardware(const UserSettings& s, const char* cont
                   (unsigned long)s.loraFrequency, s.loraSF,
                   (unsigned long)s.loraBW, s.loraCR, s.loraTxPower,
                   s.loraPreamble);
+}
+
+// Exactly one protocol owns the radio: the native Reticulum LoRa interface
+// (RNode mode) or MeshCore. The mode is a reboot setting.
+static void startLoRaPersonality() {
+    const UserSettings& s = userConfig.settings();
+    if (s.loraMode != LoRaMode::MeshCore) {
+        rustLoraIface.start();
+        return;
+    }
+    if (!meshcore.begin(s)) Serial.println("[BOOT] MeshCore could not start; LoRa stays off");
 }
 
 unsigned long lastStatusUpdate = 0;
@@ -396,9 +413,9 @@ void onHotkeyRssiMonitor() { serviceClient.action(handheld::Operation::Diagnosti
 
 void setup() {
     ratspeakRetainComponentId(RATSPEAK_COMPONENT_ID("tpager", "standalone"));
-    diagnostics.boardHelp = "[SERIAL] O power-off";
+    diagnostics.boardHelp = "[SERIAL] O power-off  M meshcore-status  B bind-request  A advert";
     diagnostics.boardCommand = [](char command) {
-        if (command != 'O') return false;
+        if (command != 'O') return meshcore.serialCommand(command);
         // Serial runs on the protocol task; the UI owns lifecycle submission
         // and the eventual PMU action after the service has settled.
         serialPowerOffRequested.store(true, std::memory_order_release);
@@ -719,7 +736,7 @@ void setup() {
         }
         applyRadioSettingsToHardware(userConfig.settings(), "BOOT COMMITTED");
         protocolRuntime.pump().attachLoRa(&rustLoraIface);
-        if (radioOnline && userConfig.settings().loraEnabled) rustLoraIface.start();
+        if (radioOnline && userConfig.settings().loraEnabled) startLoRaPersonality();
         Serial.printf("[BOOT] Rust transport up: dest=%s\n",
                       protocolRuntime.destinationHashHex().c_str());
         lvBootScreen.setProgress(0.75f, "Reticulum ready");
@@ -852,7 +869,7 @@ void setup() {
         status.gpsFix = gps.hasTimeFix();
 #endif
         status.radio = radioOnline && radio.isRadioOnline();
-        status.lora = rustLoraIface.isOnline();
+        status.lora = rustLoraIface.isOnline() || meshcore.online();
         status.wifiEnabled = WiFi.getMode() != WIFI_OFF;
         status.wifi = network.connected();
         status.ap = network.accessPoint() && network.accessPoint()->isAPActive();
@@ -894,6 +911,7 @@ void setup() {
     deviceService.closeAdmissions = []() {
         announceScheduler.stop();
         network.closeAdmissions(); protocolRuntime.beginMaintenance(rustLoraIface);
+        meshcore.stop();
     };
     deviceService.pollSettlements = []() {
         protocolRuntime.pollMaintenance();
@@ -1232,6 +1250,8 @@ static void serviceNetworkPoll() {
             rnsDuration = millis() - rnsStart;
         }
     }
+    // MeshCore polls its radio every pass (no-op unless MeshCore mode is running).
+    meshcore.loop();
 
 
     if (bootComplete && backend->pollRadioBeforeBlockingWork()) pollScheduledAnnounces();
