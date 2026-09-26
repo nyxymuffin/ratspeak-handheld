@@ -12,7 +12,13 @@
 #include "TunnelCodec.h"
 #include "config/UserConfig.h"
 
+// Board serial commands (DeviceDiagnostics falls through to the board for
+// letters it does not own; a/m/t/d/r/i/p/q and the line letters are taken).
+#define MESHCORE_SERIAL_HELP "N meshcore-status  B bind-request  V advert"
+
 namespace handheld::meshcore {
+
+static_assert(tunnel::kPublicKeySize == kPublicKeySize, "one MeshCore public key size");
 
 class Personality {
 public:
@@ -20,12 +26,11 @@ public:
 
     bool begin(const UserSettings& settings);
     void loop();
-    void stop() { _service.stop(); }
+    void stop() { _service.stop(); _bindReplyAtMs = 0; }
     bool online() const { return _service.running(); }
 
-    // Board serial commands; returns false for characters it does not own.
+    // Board serial commands (MESHCORE_SERIAL_HELP); false for other characters.
     bool serialCommand(char command);
-    static constexpr const char* kSerialHelp = "M meshcore-status  B bind-request  A advert";
 
 private:
     struct Peer {
@@ -48,8 +53,8 @@ private:
     Peer _peers[kMaxPeers];
     char _nodeName[kNodeNameMax] = {};
     uint32_t _bindReplyAtMs = 0;     // 0: no reply pending
-    uint32_t _lastBindSentMs = 0;
-    bool _bindSent = false;
+    uint32_t _lastBindReplyMs = 0;   // last Bind (not Bind request) we sent
+    bool _bindReplied = false;
 };
 
 // Settings -> service configuration. The channel name is a local label only

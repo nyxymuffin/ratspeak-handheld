@@ -2,6 +2,9 @@
 
 #include <esp_random.h>
 
+#include "config/MeshCoreRules.h"
+#include "util/DisplayName.h"
+
 namespace handheld::meshcore {
 
 namespace {
@@ -14,8 +17,15 @@ constexpr uint32_t kBindReplyMinMs = 1000;
 constexpr uint32_t kBindReplySpreadMs = 4000;
 constexpr uint32_t kBindRepeatGuardMs = 5000;
 
-void copyText(char* dest, size_t capacity, const String& text) {
-    const size_t length = text.length() < capacity - 1 ? text.length() : capacity - 1;
+// Copies a name, cut at a whole UTF-8 character within MeshCore's 31 bytes
+// (the display name allows 16 characters, up to 64 bytes). Falls back when
+// empty or not a valid MeshCore name.
+void copyName(char (&dest)[kNodeNameMax], const String& text, const char* fallback) {
+    const size_t length = displayNamePrefix(text.c_str(), text.length(), meshcore_rules::kMaxNameBytes);
+    if (length == 0 || !meshcore_rules::validName(text.c_str(), length)) {
+        strlcpy(dest, fallback, sizeof(dest));
+        return;
+    }
     memcpy(dest, text.c_str(), length);
     dest[length] = '\0';
 }
@@ -24,18 +34,20 @@ void printKeyPrefix(const uint8_t* key, size_t bytes) {
     for (size_t i = 0; i < bytes; ++i) Serial.printf("%02x", key[i]);
 }
 
+// Names from the air are untrusted: keep control/escape bytes out of the log.
+void printSafe(const char* text) {
+    for (const char* p = text; *p; ++p) Serial.print(*p >= 0x20 && *p < 0x7F ? *p : '?');
+}
+
 } // namespace
 
 Config configFrom(const UserSettings& settings) {
     const MeshCoreSettings& mc = settings.meshcore;
     Config config;
     config.radio = {mc.frequency, mc.bandwidth, mc.spreadingFactor, mc.codingRate, mc.txPower};
-    const String& name = !mc.nodeName.isEmpty() ? mc.nodeName
-        : !settings.displayName.isEmpty() ? settings.displayName : String(kDefaultNodeName);
-    copyText(config.nodeName, sizeof(config.nodeName), name);
-    copyText(config.channelName, sizeof(config.channelName),
-             mc.channelName.isEmpty() ? String(kDefaultChannelName) : mc.channelName);
-    copyText(config.channelPsk, sizeof(config.channelPsk), mc.channelPsk);
+    copyName(config.nodeName, mc.nodeName.isEmpty() ? settings.displayName : mc.nodeName, kDefaultNodeName);
+    copyName(config.channelName, mc.channelName, kDefaultChannelName);
+    strlcpy(config.channelPsk, mc.channelPsk.c_str(), sizeof(config.channelPsk));
     config.pathHashSize = static_cast<PathHashSize>(mc.pathHashSize);   // sanitized to 1..3
     config.channelReach = mc.floodChannel ? ChannelReach::Flood : ChannelReach::ZeroHop;
     return config;
@@ -87,12 +99,15 @@ void Personality::onFragment(const tunnel::Fragment& fragment) {
 void Personality::onBind(const tunnel::Bind& bind) {
     uint8_t own[kPublicKeySize];
     if (_service.publicKey(own) && memcmp(own, bind.publicKey, kPublicKeySize) == 0) return;   // own echo
-    Serial.printf("[TUNNEL] rx %s from '%s' key=", bind.request ? "bind-request" : "bind", bind.name);
+    Serial.printf("[TUNNEL] rx %s from '", bind.request ? "bind-request" : "bind");
+    printSafe(bind.name);
+    Serial.print("' key=");
     printKeyPrefix(bind.publicKey, 8);
     Serial.printf("... %s\n", bind.router ? "router" : "edge");
     rememberPeer(bind);
     if (!bind.request || _bindReplyAtMs) return;
-    if (_bindSent && millis() - _lastBindSentMs < kBindRepeatGuardMs) return;
+    // Spec 2.2: no reply if we already sent a Bind within the window.
+    if (_bindReplied && millis() - _lastBindReplyMs < kBindRepeatGuardMs) return;
     _bindReplyAtMs = millis() + kBindReplyMinMs + esp_random() % kBindReplySpreadMs;
     if (_bindReplyAtMs == 0) _bindReplyAtMs = 1;   // 0 means "none pending"
 }
@@ -103,9 +118,11 @@ void Personality::rememberPeer(const tunnel::Bind& bind) {
         if (peer.used && memcmp(peer.publicKey, bind.publicKey, kPublicKeySize) == 0) { slot = &peer; break; }
         if (!slot && !peer.used) slot = &peer;
     }
-    if (!slot) {   // table full: replace the least recently seen
+    if (!slot) {   // table full: replace the least recently seen (ages are wrap-safe)
+        const uint32_t now = millis();
         slot = &_peers[0];
-        for (auto& peer : _peers) if (peer.lastSeenMs < slot->lastSeenMs) slot = &peer;
+        for (auto& peer : _peers)
+            if (now - peer.lastSeenMs > now - slot->lastSeenMs) slot = &peer;
     }
     memcpy(slot->publicKey, bind.publicKey, kPublicKeySize);
     memcpy(slot->name, bind.name, sizeof(slot->name));
@@ -125,16 +142,18 @@ bool Personality::sendBind(bool request) {
     uint8_t body[tunnel::kMaxBody];
     const size_t length = tunnel::encodeBind(bind, body, sizeof(body));
     const bool sent = length && _service.sendData(DataType::RnsTunnel, body, length);
-    if (sent) { _bindSent = true; _lastBindSentMs = millis(); }
+    if (sent && !request) { _bindReplied = true; _lastBindReplyMs = millis(); }
     Serial.printf("[TUNNEL] tx %s %s\n", request ? "bind-request" : "bind", sent ? "queued" : "FAILED");
     return sent;
 }
 
 bool Personality::serialCommand(char command) {
     switch (command) {
-    case 'M': printStatus(); return true;
-    case 'B': sendBind(true); return true;
-    case 'A': Serial.printf("[MESHCORE] advert %s\n", _service.sendAdvert(true) ? "queued" : "FAILED"); return true;
+    case 'N': case 'n': printStatus(); return true;
+    case 'B': case 'b': sendBind(true); return true;
+    case 'V': case 'v':
+        Serial.printf("[MESHCORE] advert %s\n", _service.sendAdvert(true) ? "queued" : "FAILED");
+        return true;
     default: return false;
     }
 }
@@ -149,7 +168,9 @@ void Personality::printStatus() const {
                   s.lastRssi, s.lastSnr);
     for (const auto& peer : _peers) {
         if (!peer.used) continue;
-        Serial.printf("[MESHCORE]   peer '%s' ", peer.name);
+        Serial.print("[MESHCORE]   peer '");
+        printSafe(peer.name);
+        Serial.print("' ");
         printKeyPrefix(peer.publicKey, 8);
         Serial.printf("... %s, seen %lus ago\n", peer.router ? "router" : "edge",
                       (unsigned long)((millis() - peer.lastSeenMs) / 1000));

@@ -7,6 +7,7 @@
 #include "config/Config.h"
 #include "config/AnnounceInterval.h"
 #include "config/UserConfig.h"
+#include "config/MeshCoreRules.h"
 #include "radio/RadioFrequency.h"
 #include "radio/RadioBandwidth.h"
 #include "radio/RadioPresets.h"
@@ -89,6 +90,45 @@ bool isWiFiPasswordLabel(const char* label) {
     return labelEq(label, "WiFi Password");
 }
 
+// Values shown masked and hidden from UI snapshots.
+bool isSecretLabel(const char* label) {
+    return isWiFiPasswordLabel(label) || labelEq(label, "Channel PSK");
+}
+
+// FNV-1a over every MeshCore field, for change detection only.
+uint32_t meshcoreFingerprint(const MeshCoreSettings& mc) {
+    uint32_t hash = 2166136261u;
+    const auto mix = [&hash](const void* data, size_t length) {
+        const auto* bytes = static_cast<const uint8_t*>(data);
+        for (size_t i = 0; i < length; ++i) hash = (hash ^ bytes[i]) * 16777619u;
+    };
+    const auto mixString = [&mix](const String& text) {
+        const uint32_t length = text.length();
+        mix(&length, sizeof(length));   // separates adjacent strings
+        mix(text.c_str(), length);
+    };
+    mix(&mc.frequency, sizeof(mc.frequency));
+    mix(&mc.bandwidth, sizeof(mc.bandwidth));
+    mix(&mc.spreadingFactor, sizeof(mc.spreadingFactor));
+    mix(&mc.codingRate, sizeof(mc.codingRate));
+    mix(&mc.txPower, sizeof(mc.txPower));
+    mix(&mc.pathHashSize, sizeof(mc.pathHashSize));
+    mix(&mc.floodChannel, sizeof(mc.floodChannel));
+    mixString(mc.nodeName);
+    mixString(mc.channelName);
+    mixString(mc.channelPsk);
+    return hash;
+}
+
+bool meshcoreMode(const UserSettings& s) {
+#if RATSPEAK_MESHCORE
+    return s.loraMode == LoRaMode::MeshCore;
+#else
+    (void)s;
+    return false;
+#endif
+}
+
 size_t selectedWiFiSlot(const UserSettings& s) {
     return s.wifiSTASelected < WIFI_STA_MAX_NETWORKS ? s.wifiSTASelected : 0;
 }
@@ -159,7 +199,13 @@ bool LvSettingsScreen::settingNeedsReboot(const SettingItem& item) const {
     if (!_cfg) return false;
     const auto& s = _cfg->settings();
     if (labelEq(item.label, "WiFi Mode")) return s.wifiMode != _rebootSnap.wifiMode;
-    if (labelEq(item.label, "LoRa Radio")) return loraSettingsChanged();
+    if (labelEq(item.label, "LoRa Radio") || labelEq(item.label, "LoRa Mode")) return loraSettingsChanged();
+    // In MeshCore mode every row below the mode selector is a reboot setting.
+    if (meshcoreMode(s) && (labelEq(item.label, "Frequency") || labelEq(item.label, "TX Power") ||
+        labelEq(item.label, "Spread Factor") || labelEq(item.label, "Bandwidth") ||
+        labelEq(item.label, "Coding Rate") || labelEq(item.label, "Path Hash") ||
+        labelEq(item.label, "Channel Reach") || labelEq(item.label, "Node Name") ||
+        labelEq(item.label, "Channel PSK"))) return loraSettingsChanged();
     if (labelEq(item.label, "WiFi Profile")) return s.wifiSTASelected != _rebootSnap.wifiSTASelected;
     if (isWiFiSSIDLabel(item.label) || isWiFiPasswordLabel(item.label)) return interfaceSettingsChanged();
     if (labelEq(item.label, "Scan Networks") || labelEq(item.label, "Forget Network")) return interfaceSettingsChanged();
@@ -576,6 +622,11 @@ void LvSettingsScreen::buildItems() {
         [&s](int v) { s.loraEnabled = (v != 0); },
         [](int v) { return String(onOff(v != 0)); }});
     idx++;
+#if RATSPEAK_MESHCORE
+    addLoRaModeItem(s, idx);
+    if (meshcoreMode(s)) addMeshCoreItems(s, idx);
+#endif
+    if (!meshcoreMode(s)) {
     {
         // Explicitly choosing a region restores its default frequency.
         SettingItem regionItem;
@@ -622,8 +673,7 @@ void LvSettingsScreen::buildItems() {
                 _confirmingDevMode = false;
                 clearConfirmations();
                 applyAndSave();
-                buildItems();
-                enterCategory(_categoryIdx);
+                _itemsRebuildPending = true;
                 return;
             }
             if (!_confirmingDevMode) {
@@ -669,6 +719,7 @@ void LvSettingsScreen::buildItems() {
             [](int v) { return String(v); }, 6, 65, 1});
         idx++;
     }
+    } // RNode mode rows
     _categories.push_back({"LoRa", radioStart, idx - radioStart,
         [this]() {
             if (loraSettingsChanged()) {
@@ -677,6 +728,7 @@ void LvSettingsScreen::buildItems() {
             int p = detectPreset();
             auto& s = _cfg->settings();
             if (!s.loraEnabled) return String("Off");
+            if (meshcoreMode(s)) return String(String("MeshCore ") + formatRadioFrequency(s.meshcore.frequency));
             String label = (p >= 0) ? String(RadioPresets::values[p].name) : String("Custom");
             label += " ";
             label += formatRadioFrequency(s.loraFrequency);
@@ -1483,7 +1535,7 @@ void LvSettingsScreen::rebuildItemList() {
                     break;
                 case SettingType::TEXT_INPUT: {
                     String v = item.textGetter ? item.textGetter() : "";
-                    valStr = v.isEmpty() ? "(not set)" : (isWiFiPasswordLabel(item.label) ? maskedValue(v) : v);
+                    valStr = v.isEmpty() ? "(not set)" : (isSecretLabel(item.label) ? maskedValue(v) : v);
                     valColor = v.isEmpty() ? Theme::TEXT_MUTED : Theme::PRIMARY;
                     break;
                 }
@@ -1513,7 +1565,7 @@ void LvSettingsScreen::rebuildItemList() {
 
         if (!valStr.isEmpty()) {
             lv_obj_t* valLbl = lv_label_create(row);
-            if (isWiFiPasswordLabel(item.label)) LvPrivacy::markSensitive(valLbl);
+            if (isSecretLabel(item.label)) LvPrivacy::markSensitive(valLbl);
             lv_obj_set_style_text_font(valLbl, font, 0);
             lv_obj_set_style_text_color(valLbl, lv_color_hex(valColor), 0);
             lv_obj_set_style_text_align(valLbl, LV_TEXT_ALIGN_RIGHT, 0);
@@ -1974,7 +2026,16 @@ bool LvSettingsScreen::handleKey(const KeyEvent& event) {
                 if (item.type == SettingType::ACTION) {
                     if (!confirmableAction(item)) clearConfirmations();
                     if (item.action) item.action();
-                    if (_view == SettingsView::ITEM_LIST) rebuildItemList();
+                    // Actions that change which rows exist ask for the rebuild
+                    // here, after they return: buildItems() destroys the
+                    // std::function that is running.
+                    if (_itemsRebuildPending) {
+                        _itemsRebuildPending = false;
+                        buildItems();
+                        enterCategory(_categoryIdx);
+                    } else if (_view == SettingsView::ITEM_LIST) {
+                        rebuildItemList();
+                    }
                 } else if (item.type == SettingType::TEXT_INPUT) {
                     clearConfirmations();
                     if (!item.textGetter) return true;
@@ -2101,6 +2162,8 @@ void LvSettingsScreen::snapshotRebootSettings() {
     _rebootSnap.autoIfaceEnabled = s.autoIfaceEnabled;
     _rebootSnap.sdStorageEnabled = s.sdStorageEnabled;
     _rebootSnap.loraEnabled = s.loraEnabled;
+    _rebootSnap.loraMode = s.loraMode;
+    _rebootSnap.meshcoreFingerprint = meshcoreFingerprint(s.meshcore);
 }
 
 bool LvSettingsScreen::rebootSettingsChanged() const {
@@ -2110,7 +2173,12 @@ bool LvSettingsScreen::rebootSettingsChanged() const {
 
 bool LvSettingsScreen::loraSettingsChanged() const {
     if (!_cfg) return false;
-    return _cfg->settings().loraEnabled != _rebootSnap.loraEnabled;
+    const auto& s = _cfg->settings();
+    if (s.loraEnabled != _rebootSnap.loraEnabled || s.loraMode != _rebootSnap.loraMode) return true;
+    // Same mode as at boot. MeshCore fields only matter while MeshCore runs,
+    // and then every one needs a reboot (the node is configured once per boot).
+    if (s.loraMode != LoRaMode::MeshCore) return false;
+    return meshcoreFingerprint(s.meshcore) != _rebootSnap.meshcoreFingerprint;
 }
 
 bool LvSettingsScreen::interfaceSettingsChanged() const {
@@ -2200,3 +2268,83 @@ void LvSettingsScreen::applyAndSave() {
             result.detail[0] ? result.detail : "Saved", 2000);
     });
 }
+
+#if RATSPEAK_MESHCORE
+// Settings > LoRa mode selector. An ACTION row (like Developer Radio Controls)
+// because the rows below it change with the mode, which needs buildItems().
+void LvSettingsScreen::addLoRaModeItem(UserSettings& s, int& idx) {
+    SettingItem mode;
+    mode.label = "LoRa Mode";
+    mode.type = SettingType::ACTION;
+    mode.formatter = [&s](int) { return String(meshcoreMode(s) ? "MeshCore" : "RNode"); };
+    mode.action = [this, &s]() {
+        s.loraMode = meshcoreMode(s) ? LoRaMode::RNode : LoRaMode::MeshCore;
+        applyAndSave();
+        _itemsRebuildPending = true;
+    };
+    _items.push_back(mode);
+    idx++;
+}
+
+// MeshCore-mode rows. All of them take effect after a reboot (the MeshCore
+// node is configured once per boot). Ranges match UserConfig::sanitizeMeshCore.
+void LvSettingsScreen::addMeshCoreItems(UserSettings& s, int& idx) {
+    MeshCoreSettings& mc = s.meshcore;
+    // "Frequency" selects the digit-cursor editor, which writes through the setter.
+    _items.push_back({"Frequency", SettingType::INTEGER,
+        [&mc]() { return (int)mc.frequency; },
+        [&mc](int v) { mc.frequency = (uint32_t)v; },
+        [](int v) { return formatRadioFrequency(v); },
+        LORA_MIN_FREQUENCY, LORA_MAX_FREQUENCY, 125000});
+    idx++;
+    _items.push_back({"TX Power", SettingType::INTEGER,
+        [&mc]() { return mc.txPower; }, [&mc](int v) { mc.txPower = v; },
+        [](int v) { return String(v) + " dBm"; }, -9, 22, 1});
+    idx++;
+    _items.push_back({"Spread Factor", SettingType::INTEGER,
+        [&mc]() { return mc.spreadingFactor; }, [&mc](int v) { mc.spreadingFactor = v; },
+        [](int v) { return String("SF") + String(v); }, 7, 12, 1});
+    idx++;
+    _items.push_back({"Bandwidth", SettingType::ENUM_CHOICE,
+        [&mc]() { return RadioBandwidth::index(mc.bandwidth); },
+        [&mc](int v) { mc.bandwidth = RadioBandwidth::values[constrain(v, 0, RadioBandwidth::count - 1)].hz; },
+        nullptr, 0, RadioBandwidth::count - 1, 1,
+        {"7.8k", "10.4k", "15.6k", "20.8k", "31.25k", "41.7k", "62.5k", "125k", "250k", "500k"}});
+    idx++;
+    _items.push_back({"Coding Rate", SettingType::INTEGER,
+        [&mc]() { return mc.codingRate; }, [&mc](int v) { mc.codingRate = v; },
+        [](int v) { return String("4/") + String(v); }, 5, 8, 1});
+    idx++;
+    _items.push_back({"Path Hash", SettingType::INTEGER,
+        [&mc]() { return mc.pathHashSize; }, [&mc](int v) { mc.pathHashSize = v; },
+        [](int v) { return String(v) + (v == 1 ? " byte" : " bytes"); }, 1, 3, 1});
+    idx++;
+    _items.push_back({"Channel Reach", SettingType::ENUM_CHOICE,
+        [&mc]() { return mc.floodChannel ? 1 : 0; }, [&mc](int v) { mc.floodChannel = v != 0; },
+        nullptr, 0, 1, 1, {"Zero-hop", "Flood"}});
+    idx++;
+
+    SettingItem name;
+    name.label = "Node Name";
+    name.type = SettingType::TEXT_INPUT;
+    name.textGetter = [&mc]() -> const String& { return mc.nodeName; };
+    name.textSetter = [&mc](const String& v) {
+        return UserConfig::trySetString(mc.nodeName, v.c_str(), v.length());
+    };
+    name.maxTextLen = handheld::meshcore_rules::kMaxNameBytes;
+    _items.push_back(name);
+    idx++;
+
+    // Base64 of a 16- or 32-byte key; checked on save (SettingsTransaction).
+    SettingItem psk;
+    psk.label = "Channel PSK";
+    psk.type = SettingType::TEXT_INPUT;
+    psk.textGetter = [&mc]() -> const String& { return mc.channelPsk; };
+    psk.textSetter = [&mc](const String& v) {
+        return UserConfig::trySetString(mc.channelPsk, v.c_str(), v.length());
+    };
+    psk.maxTextLen = handheld::meshcore_rules::kPsk256Length;
+    _items.push_back(psk);
+    idx++;
+}
+#endif

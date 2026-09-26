@@ -83,6 +83,10 @@ public:
 private:
     handheld::ServiceClient* _service = nullptr;
     void buildItems();
+#if RATSPEAK_MESHCORE
+    void addLoRaModeItem(UserSettings& s, int& idx);
+    void addMeshCoreItems(UserSettings& s, int& idx);
+#endif
     void applyAndSave();
     void applyPreset(int presetIdx);
     int detectPreset() const;
@@ -147,6 +151,7 @@ private:
     bool _confirmingWipeSD = false;
     bool _confirmingReset = false;
     bool _confirmingDevMode = false;
+    bool _itemsRebuildPending = false;   // set by actions that change the row set
 
     enum class FirmwareCheckState : uint8_t {
         IDLE,
@@ -185,6 +190,10 @@ private:
         bool autoIfaceEnabled;
         bool sdStorageEnabled;
         bool loraEnabled;
+        LoRaMode loraMode;
+        // Fingerprint of MeshCoreSettings (all MeshCore fields need a reboot);
+        // avoids keeping a second copy of the channel PSK for the session.
+        uint32_t meshcoreFingerprint;
     };
     RebootSnapshot _rebootSnap{};
     void snapshotRebootSettings();

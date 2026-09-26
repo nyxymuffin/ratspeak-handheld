@@ -413,7 +413,7 @@ void onHotkeyRssiMonitor() { serviceClient.action(handheld::Operation::Diagnosti
 
 void setup() {
     ratspeakRetainComponentId(RATSPEAK_COMPONENT_ID("tpager", "standalone"));
-    diagnostics.boardHelp = "[SERIAL] O power-off  M meshcore-status  B bind-request  A advert";
+    diagnostics.boardHelp = "[SERIAL] O power-off  " MESHCORE_SERIAL_HELP;
     diagnostics.boardCommand = [](char command) {
         if (command != 'O') return meshcore.serialCommand(command);
         // Serial runs on the protocol task; the UI owns lifecycle submission
@@ -782,7 +782,7 @@ void setup() {
     // Step 21: Apply radio config
     if (radioOnline && userConfig.settings().loraEnabled) {
         applyRadioSettingsToHardware(userConfig.settings(), "BOOT");
-        ui.lvStatusBar().setLoRaOnline(true);
+        ui.lvStatusBar().setLoRaOnline(userConfig.settings().loraMode != LoRaMode::MeshCore || meshcore.online());
     } else if (radioOnline) {
         radio.sleep();
         ui.lvStatusBar().setLoRaOnline(false);

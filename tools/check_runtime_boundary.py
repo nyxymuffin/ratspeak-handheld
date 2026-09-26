@@ -31,7 +31,7 @@ for board in ("tdeck", "tpager", "m9"):
         text = path.read_text()
     loop_marker = "void handheld::lvgl_application::loop() {" if shared else "void loop() {"
     ui = text[text.index(loop_marker):]
-    check(r"\b(?:userConfig|backend|protocolRuntime|messageStore|announceManager|identityMgr|sdStore|flash|radio|autoIface|tcpClients|wifiImpl|gps)\s*(?:\.|->)",
+    check(r"\b(?:userConfig|backend|protocolRuntime|messageStore|announceManager|identityMgr|sdStore|flash|radio|meshcore|autoIface|tcpClients|wifiImpl|gps)\s*(?:\.|->)",
           ui, path, "post-startup UI loop reached a service-owned object")
     service = text[text.index("static void serviceNetworkPoll() {"):text.index(loop_marker)]
     check(r"\blv_\w+\s*\(|\b(?:ui|powerMgr|audio|inputManager)\s*\.",
