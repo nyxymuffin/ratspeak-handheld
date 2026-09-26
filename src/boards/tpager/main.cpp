@@ -232,14 +232,28 @@ static void applyRadioSettingsToHardware(const UserSettings& s, const char* cont
 
 // Exactly one protocol owns the radio: the native Reticulum LoRa interface
 // (RNode mode) or MeshCore. The mode is a reboot setting.
+// The driver attached to Reticulum interface 0 this boot. Recorded when it is
+// attached, not derived from the setting, which may change before a reboot.
+static LoRaSlotDriver* loraSlot = &rustLoraIface;
+
 static void startLoRaPersonality() {
     const UserSettings& s = userConfig.settings();
     if (s.loraMode != LoRaMode::MeshCore) {
         rustLoraIface.start();
         return;
     }
-    if (!meshcore.begin(s)) Serial.println("[BOOT] MeshCore could not start; LoRa stays off");
+    if (!meshcore.begin(s)) {
+        Serial.println("[BOOT] MeshCore could not start; LoRa stays off");
+        return;
+    }
+    // Reticulum interface 0 is the MeshCore tunnel instead of native LoRa.
+    if (meshcore.slotDriver()) {
+        loraSlot = meshcore.slotDriver();
+        protocolRuntime.pump().attachLoRa(loraSlot);
+    }
 }
+
+static LoRaSlotDriver& activeLoRaSlot() { return *loraSlot; }
 
 unsigned long lastStatusUpdate = 0;
 constexpr unsigned long STATUS_UPDATE_MS = 1000;                // 1 Hz status bar update
@@ -910,7 +924,7 @@ void setup() {
     deviceService.finishScan = [](String& json) { return wifiConnection.finishScan(json); };
     deviceService.closeAdmissions = []() {
         announceScheduler.stop();
-        network.closeAdmissions(); protocolRuntime.beginMaintenance(rustLoraIface);
+        network.closeAdmissions(); protocolRuntime.beginMaintenance(activeLoRaSlot());
         meshcore.stop();
     };
     deviceService.pollSettlements = []() {

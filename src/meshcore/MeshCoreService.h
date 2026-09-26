@@ -48,6 +48,9 @@ public:
     Status status() const;
     // Copies this node's 32-byte MeshCore public key; false before the first begin().
     bool publicKey(uint8_t out[kPublicKeySize]) const;
+    bool channelJoined() const;
+    // Estimated on-air time of a MeshCore packet of `onAirBytes` at the current radio settings.
+    uint32_t airtimeMs(size_t onAirBytes) const;
 
 private:
     struct Node;

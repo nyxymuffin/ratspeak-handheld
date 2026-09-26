@@ -165,6 +165,14 @@ bool Service::publicKey(uint8_t out[kPublicKeySize]) const {
     return true;
 }
 
+bool Service::channelJoined() const {
+    return _running && _node->host.channelJoined();
+}
+
+uint32_t Service::airtimeMs(size_t onAirBytes) const {
+    return _node ? _node->adapter.getEstAirtimeFor(static_cast<int>(onAirBytes)) : 0;
+}
+
 bool Service::loadOrCreateIdentity(Node& node) {
     // A key file that exists but cannot be read is a fault, not a first boot:
     // replacing it would silently give this node a new identity on the mesh.

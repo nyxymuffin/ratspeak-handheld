@@ -1,6 +1,8 @@
 #include "MeshCorePersonality.h"
 
+#include <esp_heap_caps.h>
 #include <esp_random.h>
+#include <new>
 
 #include "config/MeshCoreRules.h"
 #include "util/DisplayName.h"
@@ -56,11 +58,55 @@ Config configFrom(const UserSettings& settings) {
 bool Personality::begin(const UserSettings& settings) {
     const Config config = configFrom(settings);
     memcpy(_nodeName, config.nodeName, sizeof(_nodeName));
+    _flood = config.channelReach == ChannelReach::Flood;
     _service.setDataSink([this](DataType type, const uint8_t* body, size_t length) {
         onData(type, body, length);
     });
-    return _service.begin(config);
+    if (!_service.begin(config)) return false;
+    if (!_tunnel) {
+        // The reassembler and send queue are ~7 KB of buffers: keep them in PSRAM.
+        void* memory = heap_caps_aligned_alloc(alignof(tunnel::TunnelInterface), sizeof(tunnel::TunnelInterface),
+                                               MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!memory) {
+            Serial.println("[TUNNEL] No PSRAM for the tunnel; MeshCore runs without Reticulum");
+            return true;
+        }
+        _tunnel = new (memory) tunnel::TunnelInterface(_link);
+        _tunnel->configure(tunnel::TunnelInterface::Settings{});
+    }
+    _tunnel->start();
+    return true;
 }
+
+void Personality::stop() {
+    if (_tunnel) _tunnel->stop();
+    _service.stop();
+    _bindReplyAtMs = 0;
+}
+
+// ── TunnelLink ──────────────────────────────────────────────────────────────
+
+bool Personality::Link::linkOnline() const { return _owner._service.channelJoined(); }
+
+bool Personality::Link::sendBody(const uint8_t* body, size_t length) {
+    return _owner._service.sendData(DataType::RnsTunnel, body, length);
+}
+
+uint32_t Personality::Link::bodyAirtimeMs(size_t bodyLength) const {
+    return _owner._service.airtimeMs(tunnel::grpDataOnAirBytes(bodyLength));
+}
+
+bool Personality::Link::senderPrefix(uint8_t out[tunnel::kSenderPrefix]) const {
+    uint8_t key[kPublicKeySize];
+    if (!_owner._service.publicKey(key)) return false;
+    memcpy(out, key, tunnel::kSenderPrefix);
+    return true;
+}
+
+uint32_t Personality::Link::nowMs() const { return millis(); }
+uint32_t Personality::Link::random32() { return esp_random(); }
+int Personality::Link::lastRssi() const { return static_cast<int>(_owner._service.status().lastRssi); }
+float Personality::Link::lastSnr() const { return _owner._service.status().lastSnr; }
 
 void Personality::loop() {
     _service.loop();
@@ -89,11 +135,7 @@ void Personality::onData(DataType type, const uint8_t* body, size_t length) {
 }
 
 void Personality::onFragment(const tunnel::Fragment& fragment) {
-    // Phase 3 reassembles these into RNS packets; for now they are only logged.
-    Serial.print("[TUNNEL] rx fragment from ");
-    printKeyPrefix(fragment.sender, tunnel::kSenderPrefix);
-    Serial.printf(" pkt=%08lx %u/%u len=%u\n", (unsigned long)fragment.packetId,
-                  unsigned(fragment.index) + 1, unsigned(fragment.total), unsigned(fragment.payloadLength));
+    if (_tunnel) _tunnel->onFragment(fragment);
 }
 
 void Personality::onBind(const tunnel::Bind& bind) {
@@ -166,6 +208,19 @@ void Personality::printStatus() const {
                   s.channelJoined ? "joined" : "none", (unsigned long)s.rxPackets, (unsigned long)s.txPackets,
                   (unsigned long)s.txFailures, (unsigned long)s.dataReceived, (unsigned long)s.dataSent,
                   s.lastRssi, s.lastSnr);
+    if (_tunnel) {
+        const auto& c = _tunnel->counters();
+        Serial.printf("[TUNNEL] %s %lu bit/s pkts tx=%lu rx=%lu frags tx=%lu refused=%lu dropped=%lu "
+                      "announces-held=%lu path-req-held=%lu air=%luB/h shed=%lu assembling=%u\n",
+                      _tunnel->isOnline() ? "online" : "offline", (unsigned long)_tunnel->bitrate(),
+                      (unsigned long)c.packetsSent, (unsigned long)c.packetsReceived,
+                      (unsigned long)c.fragmentsSent, (unsigned long)c.refusedByPolicy,
+                      (unsigned long)c.queuedDropped,
+                      (unsigned long)_tunnel->throttle().announcesSuppressed(),
+                      (unsigned long)_tunnel->throttle().pathRequestsSuppressed(),
+                      (unsigned long)_tunnel->budget().usedThisWindow(), (unsigned long)_tunnel->budget().shed(),
+                      unsigned(_tunnel->reassembler().pending()));
+    }
     for (const auto& peer : _peers) {
         if (!peer.used) continue;
         Serial.print("[MESHCORE]   peer '");

@@ -2,14 +2,15 @@
 
 // The MeshCore LoRa personality as the T-Pager board sees it: the MeshCore
 // service, tunnel peer discovery (Bind / Bind request, rns-gateway
-// docs/GRP_DATA_TUNNEL.md section 2.2) and its serial commands. RNS packet
-// transport over the tunnel is added in phase 3.
+// docs/GRP_DATA_TUNNEL.md section 2.2), the tunnel that carries RNS packets as
+// Reticulum interface 0 in MeshCore mode (TunnelInterface), and serial commands.
 //
 // Same threading rule as Service: all calls on the device-service owner task
 // (begin() may also run during setup(), before ownership is handed over).
 
 #include "MeshCoreService.h"
 #include "TunnelCodec.h"
+#include "TunnelInterface.h"
 #include "config/UserConfig.h"
 
 // Board serial commands (DeviceDiagnostics falls through to the board for
@@ -26,8 +27,10 @@ public:
 
     bool begin(const UserSettings& settings);
     void loop();
-    void stop() { _service.stop(); _bindReplyAtMs = 0; }
+    void stop();
     bool online() const { return _service.running(); }
+    // The tunnel as slot 0, or nullptr before a successful begin().
+    LoRaSlotDriver* slotDriver() { return _tunnel; }
 
     // Board serial commands (MESHCORE_SERIAL_HELP); false for other characters.
     bool serialCommand(char command);
@@ -49,7 +52,27 @@ private:
     void rememberPeer(const tunnel::Bind& bind);
     void printStatus() const;
 
+    // TunnelLink over the MeshCore service.
+    class Link final : public tunnel::TunnelLink {
+    public:
+        explicit Link(Personality& owner) : _owner(owner) {}
+        bool linkOnline() const override;
+        bool sendBody(const uint8_t* body, size_t length) override;
+        uint32_t bodyAirtimeMs(size_t bodyLength) const override;
+        bool floodReach() const override { return _owner._flood; }
+        bool senderPrefix(uint8_t out[tunnel::kSenderPrefix]) const override;
+        uint32_t nowMs() const override;
+        uint32_t random32() override;
+        int lastRssi() const override;
+        float lastSnr() const override;
+    private:
+        Personality& _owner;
+    };
+
     Service _service;
+    Link _link{*this};
+    tunnel::TunnelInterface* _tunnel = nullptr;   // PSRAM, allocated once per boot
+    bool _flood = false;
     Peer _peers[kMaxPeers];
     char _nodeName[kNodeNameMax] = {};
     uint32_t _bindReplyAtMs = 0;     // 0: no reply pending
