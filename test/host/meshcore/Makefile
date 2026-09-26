@@ -7,7 +7,12 @@ SRC_DIR := ../../../src/meshcore
 CONFIG_DIR := ../../../src/core/config
 BUILD := build
 
-TESTS := $(BUILD)/test_radio_policy $(BUILD)/test_settings_rules $(BUILD)/test_tunnel_codec
+TESTS := $(BUILD)/test_radio_policy $(BUILD)/test_settings_rules $(BUILD)/test_tunnel_codec \
+         $(BUILD)/test_tunnel_reassembler $(BUILD)/test_tunnel_policy
+
+# Pure sources a test links against, beyond its own file.
+test_tunnel_reassembler_SOURCES := $(SRC_DIR)/TunnelReassembler.cpp
+test_tunnel_policy_SOURCES := $(SRC_DIR)/TunnelPolicy.cpp
 
 .PHONY: all test clean
 all: test
@@ -15,9 +20,10 @@ all: test
 test: $(TESTS)
 	@for t in $(TESTS); do ./$$t || exit 1; done
 
-$(BUILD)/%: %.cpp $(wildcard $(SRC_DIR)/*.h) $(CONFIG_DIR)/MeshCoreRules.h
+.SECONDEXPANSION:
+$(BUILD)/%: %.cpp $$(%_SOURCES) $(wildcard $(SRC_DIR)/*.h) $(CONFIG_DIR)/MeshCoreRules.h
 	@mkdir -p $(BUILD)
-	$(CXX) $(CXXFLAGS) -I$(SRC_DIR) -I$(CONFIG_DIR) $< -o $@
+	$(CXX) $(CXXFLAGS) -I$(SRC_DIR) -I$(CONFIG_DIR) $< $($*_SOURCES) -o $@
 
 clean:
 	rm -rf $(BUILD)
