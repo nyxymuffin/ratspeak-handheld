@@ -218,9 +218,9 @@ bool Service::createIdentity(Node& node) {
     return ok;
 }
 
-void Service::deliver(void* context, DataType type, const uint8_t* data, size_t length) {
+void Service::deliver(void* context, DataType type, const uint8_t* data, size_t length, uint8_t meshHops) {
     auto* self = static_cast<Service*>(context);
-    if (self->_sink) self->_sink(type, data, length);
+    if (self->_sink) self->_sink(type, data, length, meshHops);
 }
 
 } // namespace handheld::meshcore

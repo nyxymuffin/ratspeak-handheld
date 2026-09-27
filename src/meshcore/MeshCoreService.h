@@ -28,7 +28,8 @@ public:
     // Called from inside Service::loop() for each GRP_DATA packet on our
     // channel. `data` is valid only for the duration of the call. The sink may
     // call sendData(); it must not call stop() or setDataSink().
-    using DataSink = std::function<void(DataType type, const uint8_t* data, size_t length)>;
+    // `meshHops`: MeshCore repeaters the packet crossed (0 when heard directly).
+    using DataSink = std::function<void(DataType type, const uint8_t* data, size_t length, uint8_t meshHops)>;
 
     Service(BoardRadio& radio, FlashStore& flash) : _radio(radio), _flash(flash) {}
     Service(const Service&) = delete;
@@ -59,7 +60,7 @@ private:
     bool loadOrCreateIdentity(Node& node);
     bool loadIdentity(Node& node);
     bool createIdentity(Node& node);
-    static void deliver(void* context, DataType type, const uint8_t* data, size_t length);
+    static void deliver(void* context, DataType type, const uint8_t* data, size_t length, uint8_t meshHops);
 
     BoardRadio& _radio;
     FlashStore& _flash;

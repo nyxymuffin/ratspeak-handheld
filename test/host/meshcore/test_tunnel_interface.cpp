@@ -309,6 +309,24 @@ static void receivesPackets() {
     CHECK(f.tunnel.counters().packetsReceived == 1);
 }
 
+static void meshHopsReachReticulum() {
+    Fixture f;
+    Bytes p = dataPacket(200, 15);
+    p[1] = 1;                                                   // one Reticulum hop already
+    const uint8_t peer[4] = {0xcc, 1, 2, 3};
+    uint8_t body[kMaxBody];
+    for (uint8_t i = 0; i < 2; ++i) {
+        const size_t n = encodeFragment(peer, 88, i, p.data(), p.size(), body, sizeof(body));
+        Fragment frag;
+        decodeFragment(body, n, frag);
+        f.tunnel.onFragment(frag, i == 0 ? 17 : 23);            // fragments took different routes
+    }
+    CHECK(f.received.size() == 1);
+    CHECK(f.received[0][1] == 1 + 23);                          // hop byte grew by the MeshCore hops
+    CHECK(memcmp(f.received[0].data() + 2, p.data() + 2, p.size() - 2) == 0);   // nothing else changed
+    CHECK(f.tunnel.counters().lastMeshHops == 23 && f.tunnel.counters().maxMeshHops == 23);
+}
+
 static void bitrateFollowsPacing() {
     Fixture f;
     CHECK(f.tunnel.bitrate() == 154u * 8 * 1000 / 2500);       // zero-hop: 492 bit/s
@@ -332,6 +350,7 @@ int main() {
     maintenanceDropsQueue();
     offlineRejects();
     receivesPackets();
+    meshHopsReachReticulum();
     bitrateFollowsPacing();
     if (failures) {
         std::printf("%d check(s) failed\n", failures);

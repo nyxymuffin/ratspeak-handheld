@@ -68,8 +68,8 @@ bool Personality::begin(const UserSettings& settings) {
     const Config config = configFrom(settings);
     memcpy(_nodeName, config.nodeName, sizeof(_nodeName));
     _flood = config.channelReach == ChannelReach::Flood;
-    _service.setDataSink([this](DataType type, const uint8_t* body, size_t length) {
-        onData(type, body, length);
+    _service.setDataSink([this](DataType type, const uint8_t* body, size_t length, uint8_t meshHops) {
+        onData(type, body, length, meshHops);
     });
     if (!_service.begin(config)) return false;
     if (!_tunnel) {
@@ -125,7 +125,7 @@ void Personality::loop() {
     }
 }
 
-void Personality::onData(DataType type, const uint8_t* body, size_t length) {
+void Personality::onData(DataType type, const uint8_t* body, size_t length, uint8_t meshHops) {
     if (type != DataType::RnsTunnel) return;
     tunnel::Kind kind;
     if (!tunnel::kindOf(body, length, kind)) {
@@ -134,7 +134,7 @@ void Personality::onData(DataType type, const uint8_t* body, size_t length) {
     }
     if (kind == tunnel::Kind::Fragment) {
         tunnel::Fragment fragment;
-        if (tunnel::decodeFragment(body, length, fragment)) onFragment(fragment);
+        if (tunnel::decodeFragment(body, length, fragment)) onFragment(fragment, meshHops);
         else Serial.printf("[TUNNEL] rx malformed fragment (%u bytes)\n", unsigned(length));
         return;
     }
@@ -143,8 +143,8 @@ void Personality::onData(DataType type, const uint8_t* body, size_t length) {
     else Serial.printf("[TUNNEL] rx malformed bind (%u bytes)\n", unsigned(length));
 }
 
-void Personality::onFragment(const tunnel::Fragment& fragment) {
-    if (_tunnel) _tunnel->onFragment(fragment);
+void Personality::onFragment(const tunnel::Fragment& fragment, uint8_t meshHops) {
+    if (_tunnel) _tunnel->onFragment(fragment, meshHops);
 }
 
 void Personality::onBind(const tunnel::Bind& bind) {
@@ -220,7 +220,8 @@ void Personality::printStatus() const {
     if (_tunnel) {
         const auto& c = _tunnel->counters();
         Serial.printf("[TUNNEL] %s %lu bit/s pkts tx=%lu rx=%lu frags tx=%lu refused=%lu dropped=%lu "
-                      "announces-held=%lu path-req-held=%lu air=%luB/h shed=%lu assembling=%u\n",
+                      "announces-held=%lu path-req-held=%lu air=%luB/h shed=%lu assembling=%u "
+                      "mesh-hops last=%u max=%u\n",
                       _tunnel->isOnline() ? "online" : "offline", (unsigned long)_tunnel->bitrate(),
                       (unsigned long)c.packetsSent, (unsigned long)c.packetsReceived,
                       (unsigned long)c.fragmentsSent, (unsigned long)c.refusedByPolicy,
@@ -228,7 +229,8 @@ void Personality::printStatus() const {
                       (unsigned long)_tunnel->throttle().announcesSuppressed(),
                       (unsigned long)_tunnel->throttle().pathRequestsSuppressed(),
                       (unsigned long)_tunnel->budget().usedThisWindow(), (unsigned long)_tunnel->budget().shed(),
-                      unsigned(_tunnel->reassembler().pending()));
+                      unsigned(_tunnel->reassembler().pending()), unsigned(c.lastMeshHops),
+                      unsigned(c.maxMeshHops));
     }
     for (const auto& peer : _peers) {
         if (!peer.used) continue;

@@ -167,6 +167,28 @@ static void staleAssembliesExpire() {
     CHECK(r.pending() == 0 && r.timeouts() == 1);
 }
 
+static void reportsMostMeshHops() {
+    Reassembler r;
+    const Packet p = makePacket(460, 11);                                // 3 fragments
+    uint8_t out[Reassembler::kMaxPacket];
+    uint8_t body[kMaxBody];
+    size_t length = 0;
+    uint8_t hops = 0xEE;
+    const uint8_t perFragment[3] = {12, 31, 7};
+    for (uint8_t i = 0; i < 3; ++i) {
+        const Result result = r.accept(fragmentOf(p, kA, 60, i, body), 0, out, length, perFragment[i], &hops);
+        CHECK(result == (i < 2 ? Result::Pending : Result::Complete));
+    }
+    CHECK(hops == 31);
+    // A merged lossy copy contributes its hop count too.
+    hops = 0;
+    CHECK(r.accept(fragmentOf(p, kA, 70, 0, body), 100, out, length, 5, &hops) == Result::Pending);
+    CHECK(r.accept(fragmentOf(p, kA, 70, 2, body), 100, out, length, 40, &hops) == Result::Pending);
+    CHECK(r.accept(fragmentOf(p, kA, 71, 0, body), 200, out, length, 3, &hops) == Result::Pending);
+    CHECK(r.accept(fragmentOf(p, kA, 71, 1, body), 200, out, length, 3, &hops) == Result::Complete);
+    CHECK(hops == 40);
+}
+
 static void millisWrap() {
     Reassembler r;
     const Packet p = makePacket(300, 10);
@@ -189,6 +211,7 @@ int main() {
     differentPacketsNeverMerge();
     fullTableEvictsOldest();
     staleAssembliesExpire();
+    reportsMostMeshHops();
     millisWrap();
     if (failures) {
         std::printf("%d check(s) failed\n", failures);

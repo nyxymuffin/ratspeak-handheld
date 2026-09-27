@@ -7,7 +7,7 @@
 // Semantics follow rns-gateway's MeshCoreInterface (rate_limit_ok,
 // note_heard_on_mesh, air_budget_ok) so a handheld and a gateway sharing a
 // channel treat discovery traffic the same way. These are local policy, not
-// part of the wire format (GRP_DATA_TUNNEL.md section 4).
+// part of the wire format (GRP_DATA_TUNNEL.md section 5).
 
 #include <stddef.h>
 #include <stdint.h>

@@ -18,7 +18,8 @@ namespace handheld::meshcore {
 
 class Host final : public BaseChatMesh {
 public:
-    using DataSink = void (*)(void* context, DataType type, const uint8_t* data, size_t length);
+    // `meshHops`: MeshCore repeaters the packet crossed (flood path length; 0 zero-hop).
+    using DataSink = void (*)(void* context, DataType type, const uint8_t* data, size_t length, uint8_t meshHops);
 
     Host(RadioAdapter& radio, mesh::MillisecondClock& ms, mesh::RNG& rng, mesh::RTCClock& rtc,
          mesh::PacketManager& packets, mesh::MeshTables& tables)

@@ -36,7 +36,10 @@ public:
     };
 
     void setLimits(const Limits& limits) { _limits = limits; }
-    Result accept(const Fragment& fragment, uint32_t nowMs, uint8_t (&out)[kMaxPacket], size_t& outLength);
+    // `meshHops` is how many MeshCore repeaters this fragment crossed; on
+    // Complete, `outMeshHops` (if given) is the most any fragment crossed.
+    Result accept(const Fragment& fragment, uint32_t nowMs, uint8_t (&out)[kMaxPacket], size_t& outLength,
+                  uint8_t meshHops = 0, uint8_t* outMeshHops = nullptr);
     // Drops timed-out assemblies and expired duplicate records.
     void expire(uint32_t nowMs);
 
@@ -53,6 +56,7 @@ private:
         uint8_t total = 0;
         uint8_t received = 0;          // bit i: fragment i held
         uint8_t lastLength = 0;        // payload length of fragment total-1, once held
+        uint8_t meshHops = 0;          // most MeshCore hops any held fragment crossed
         uint32_t updatedMs = 0;
         uint8_t data[kMaxPacket] = {};
     };

@@ -21,7 +21,7 @@ bool Reassembler::valid(const Fragment& f) {
 }
 
 Reassembler::Result Reassembler::accept(const Fragment& f, uint32_t nowMs, uint8_t (&out)[kMaxPacket],
-                                        size_t& outLength) {
+                                        size_t& outLength, uint8_t meshHops, uint8_t* outMeshHops) {
     outLength = 0;
     if (!valid(f)) return Result::Rejected;
     if (recentlyCompleted(f, nowMs)) return Result::Duplicate;
@@ -29,8 +29,10 @@ Reassembler::Result Reassembler::accept(const Fragment& f, uint32_t nowMs, uint8
     Assembly& a = slotFor(f, nowMs);
     if (a.received & (1u << f.index)) return Result::Duplicate;
     store(a, f, nowMs);
+    if (meshHops > a.meshHops) a.meshHops = meshHops;
     if (a.received != fullMask(a.total)) mergeLossyCopies(a);
     if (a.received != fullMask(a.total)) return Result::Pending;
+    if (outMeshHops) *outMeshHops = a.meshHops;
     outLength = finish(a, out, nowMs);
     return Result::Complete;
 }
@@ -92,6 +94,7 @@ void Reassembler::mergeLossyCopies(Assembly& a) {
             a.received |= static_cast<uint8_t>(1u << i);
         }
         // `a` now holds everything `other` had, so the older copy is spent.
+        if (other.meshHops > a.meshHops) a.meshHops = other.meshHops;
         ++_merged;
         other.used = false;
         if (a.received == fullMask(a.total)) return;

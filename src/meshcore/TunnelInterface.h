@@ -62,8 +62,10 @@ public:
     void configure(const Settings& settings);
     void start();
     void stop();
-    // A fragment from the data channel (Personality's GRP_DATA sink).
-    void onFragment(const Fragment& fragment);
+    // A fragment from the data channel (Personality's GRP_DATA sink), with the
+    // number of MeshCore repeaters it crossed. A completed packet has those
+    // hops added to its Reticulum hop count (rns::addMeshHops).
+    void onFragment(const Fragment& fragment, uint8_t meshHops = 0);
 
     // LoRaSlotDriver
     void setRawSink(RawSink sink) override { _rawSink = sink; }
@@ -93,6 +95,8 @@ public:
         uint32_t packetsReceived = 0;
         uint32_t refusedByPolicy = 0;
         uint32_t queuedDropped = 0;
+        uint8_t lastMeshHops = 0;    // MeshCore hops of the last packet received
+        uint8_t maxMeshHops = 0;     // most seen this boot
     };
     const Counters& counters() const { return _counters; }
     const DiscoveryThrottle& throttle() const { return _throttle; }

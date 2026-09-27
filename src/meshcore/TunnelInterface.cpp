@@ -255,12 +255,19 @@ void TunnelInterface::beginMaintenance() {
 
 // ── Receive ─────────────────────────────────────────────────────────────────
 
-void TunnelInterface::onFragment(const Fragment& fragment) {
+void TunnelInterface::onFragment(const Fragment& fragment, uint8_t meshHops) {
     if (!_online || _maintenance) return;
     size_t length = 0;
+    uint8_t packetHops = 0;
     const uint32_t now = _link.nowMs();
-    if (_reassembler.accept(fragment, now, _rxPacket, length) != Reassembler::Result::Complete) return;
+    if (_reassembler.accept(fragment, now, _rxPacket, length, meshHops, &packetHops) !=
+        Reassembler::Result::Complete) return;
     _throttle.noteInbound(_rxPacket, length, now);
+    // The tunnel is one Reticulum hop however many MeshCore repeaters it
+    // crossed; count those so Reticulum's per-hop timeouts cover the distance.
+    rns::addMeshHops(_rxPacket, length, packetHops);
+    _counters.lastMeshHops = packetHops;
+    if (packetHops > _counters.maxMeshHops) _counters.maxMeshHops = packetHops;
     ++_counters.packetsReceived;
     if (_rawSink) _rawSink(_rxPacket, length);
 }

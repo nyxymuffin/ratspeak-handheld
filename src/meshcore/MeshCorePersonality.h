@@ -45,9 +45,9 @@ private:
     };
     static constexpr size_t kMaxPeers = 8;
 
-    void onData(DataType type, const uint8_t* body, size_t length);
+    void onData(DataType type, const uint8_t* body, size_t length, uint8_t meshHops);
     void onBind(const tunnel::Bind& bind);
-    void onFragment(const tunnel::Fragment& fragment);
+    void onFragment(const tunnel::Fragment& fragment, uint8_t meshHops);
     bool sendBind(bool request);
     void rememberPeer(const tunnel::Bind& bind);
     void printStatus() const;

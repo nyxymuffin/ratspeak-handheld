@@ -159,6 +159,21 @@ static void airtimeBudget() {
     CHECK(b.usedThisWindow() == 0);
 }
 
+static void meshHopsAreAdded() {
+    Bytes a = announce(0x61);
+    a[1] = 2;                                                  // two Reticulum hops so far
+    rns::addMeshHops(a.data(), a.size(), 7);
+    CHECK(a[1] == 9);
+    rns::addMeshHops(a.data(), a.size(), 0);
+    CHECK(a[1] == 9);
+    a[1] = 100;
+    rns::addMeshHops(a.data(), a.size(), 64);                  // clamps, never wraps
+    CHECK(a[1] == rns::kMaxHopsBeforeIngest);
+    uint8_t runt[1] = {0};
+    rns::addMeshHops(runt, 1, 5);                              // too short: untouched
+    CHECK(runt[0] == 0);
+}
+
 static void onAirEstimate() {
     CHECK(grpDataOnAirBytes(165) == 5 + 176);                  // 3 + 165 = 168 -> 11 blocks
     CHECK(grpDataOnAirBytes(46) == 5 + 64);                    // Bind request from the spec example
@@ -175,6 +190,7 @@ int main() {
     otherTrafficAlwaysPasses();
     tablesEvictLeastRecent();
     airtimeBudget();
+    meshHopsAreAdded();
     onAirEstimate();
     if (failures) {
         std::printf("%d check(s) failed\n", failures);

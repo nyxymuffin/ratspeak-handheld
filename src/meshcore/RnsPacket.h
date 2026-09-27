@@ -66,4 +66,21 @@ inline bool pathRequestTarget(const uint8_t* packet, size_t length, uint8_t out[
     return true;
 }
 
+// Reticulum drops a packet whose hop count exceeds PATHFINDER_M - 1 = 127 after
+// the receiving transport's own +1 (RNS Transport.py, PATHFINDER_M = 128), so a
+// packet may enter ingest with at most 126.
+inline constexpr uint8_t kMaxHopsBeforeIngest = 126;
+
+// Adds the MeshCore hops a tunnelled packet crossed to its Reticulum hop count.
+// Reticulum sizes link and receipt timeouts at 6 s per hop from this count
+// (Link.py establishment_timeout, Packet.py receipt timeout), but sees the
+// whole tunnel as one hop however many repeaters it spans. The hop byte is
+// outside the packet hash (Packet.get_hashable_part), so no hash or signature
+// changes. Clamped, never wrapped.
+inline void addMeshHops(uint8_t* packet, size_t length, uint8_t meshHops) {
+    if (!packet || length < kHeaderSize || meshHops == 0) return;
+    const unsigned total = unsigned(packet[1]) + meshHops;
+    packet[1] = static_cast<uint8_t>(total > kMaxHopsBeforeIngest ? kMaxHopsBeforeIngest : total);
+}
+
 } // namespace handheld::meshcore::rns

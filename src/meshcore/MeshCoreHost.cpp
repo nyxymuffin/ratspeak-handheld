@@ -97,12 +97,13 @@ bool Host::isOurChannel(const mesh::GroupChannel& channel) const {
            memcmp(channel.secret, _channel->channel.secret, sizeof(channel.secret)) == 0;
 }
 
-void Host::onChannelDataRecv(const mesh::GroupChannel& channel, mesh::Packet*, uint16_t type,
+void Host::onChannelDataRecv(const mesh::GroupChannel& channel, mesh::Packet* pkt, uint16_t type,
                              const uint8_t* data, size_t length) {
     if (!isOurChannel(channel) || type != static_cast<uint16_t>(DataType::RnsTunnel)) return;
     if (length == 0 || length > kMaxGroupData) return;   // the decoder bounds it; do not rely on that
     ++_dataReceived;
-    if (_sink) _sink(_sinkContext, DataType::RnsTunnel, data, length);
+    const uint8_t hops = pkt && pkt->isRouteFlood() ? pkt->getPathHashCount() : 0;
+    if (_sink) _sink(_sinkContext, DataType::RnsTunnel, data, length, hops);
 }
 
 void Host::sendScoped(mesh::Packet* pkt, uint32_t delayMs) {
