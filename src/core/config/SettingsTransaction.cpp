@@ -49,6 +49,8 @@ const char* changedMeshCoreError(const MeshCoreSettings& saved, const MeshCoreSe
         return "Channel name: 0-31 printable bytes";
     if (changedAndInvalid(saved.channelPsk, edited.channelPsk, validChannelPsk))
         return "Channel PSK: base64 of a 16 or 32 byte key";
+    if (changedAndInvalid(saved.floodScope, edited.floodScope, validFloodScope))
+        return "Flood scope: *, or a region name (1-30 chars, no spaces, not $private)";
     return nullptr;
 }
 

@@ -30,6 +30,11 @@ public:
     void setRouting(PathHashSize hashSize, ChannelReach reach);
     void setDataSink(DataSink sink, void* context) { _sink = sink; _sinkContext = context; }
 
+    // Region for flooded packets. Empty or "*" floods unscoped; a public region
+    // name ("name" or "#name") floods as that region, keyed as repeaters and the
+    // companion firmware do (TransportKeyStore::getAutoKeyFor).
+    bool setFloodScope(const char* name);
+    bool floodScoped() const { return _scoped; }
     bool joinChannel(const char* name, const char* pskBase64);
     bool channelJoined() const { return _channel != nullptr; }
     bool sendData(DataType type, const uint8_t* data, size_t length);
@@ -66,6 +71,12 @@ protected:
 private:
     bool isOurChannel(const mesh::GroupChannel& channel) const;
     void sendScoped(mesh::Packet* pkt, uint32_t delayMs);
+    void flood(mesh::Packet* pkt, uint32_t delayMs);
+    uint16_t transportCode(const mesh::Packet* pkt) const;
+
+    static constexpr size_t kScopeKeyBytes = 16;   // TransportKey::key
+    uint8_t _scopeKey[kScopeKeyBytes] = {};
+    bool _scoped = false;
 
     ChannelDetails* _channel = nullptr;
     PathHashSize _hashSize = PathHashSize::OneByte;

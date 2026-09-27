@@ -50,6 +50,9 @@ struct Config {
     char channelPsk[kChannelPskMax] = {};
     PathHashSize pathHashSize = PathHashSize::OneByte;
     ChannelReach channelReach = ChannelReach::Flood;
+    // Region for flooded packets: empty or "*" floods unscoped (MeshCore's
+    // wildcard); a name floods as that public region (transport-coded).
+    char floodScope[32] = {};
 };
 
 struct Status {

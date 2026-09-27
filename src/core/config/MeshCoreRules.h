@@ -45,4 +45,24 @@ inline bool validName(const char* value, size_t length) {
     return true;
 }
 
+// MeshCore region names are stored in a 31-byte field; the companion firmware
+// accepts 1-30 characters for a default flood scope.
+inline constexpr size_t kMaxFloodScopeBytes = 30;
+
+// Flood scope: empty or "*" floods unscoped (MeshCore's wildcard region). Any
+// other value names a public region ("name" or "#name"); repeaters derive its
+// key from the name. Private "$" regions need a shared key, so are refused.
+inline bool validFloodScope(const char* value, size_t length) {
+    if (length == 0) return true;
+    if (!value || length > kMaxFloodScopeBytes || value[0] == '$') return false;
+    if (length == 1 && value[0] == '#') return false;
+    for (size_t i = 0; i < length; ++i)
+        if (static_cast<unsigned char>(value[i]) <= 0x20 || value[i] == 0x7F) return false;
+    return true;
+}
+
+inline bool unscopedFlood(const char* value, size_t length) {
+    return length == 0 || (length == 1 && value[0] == '*');
+}
+
 } // namespace handheld::meshcore_rules

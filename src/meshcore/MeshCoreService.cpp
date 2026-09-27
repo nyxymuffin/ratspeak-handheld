@@ -113,6 +113,10 @@ void Service::startHost() {
     Host& host = _node->host;
     host.begin();
     host.setRouting(config.pathHashSize, config.channelReach);
+    if (!host.setFloodScope(config.floodScope))
+        Serial.printf("[MESHCORE] Flood scope '%s' rejected; flooding unscoped\n", config.floodScope);
+    else
+        Serial.printf("[MESHCORE] Flood scope: %s\n", host.floodScoped() ? config.floodScope : "* (unscoped)");
     host.setDataSink(&Service::deliver, this);
     if (config.channelPsk[0] && !host.joinChannel(config.channelName, config.channelPsk))
         Serial.printf("[MESHCORE] Channel '%s' rejected (key must be base64 of 16 or 32 bytes)\n",

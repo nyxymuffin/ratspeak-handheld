@@ -117,6 +117,7 @@ uint32_t meshcoreFingerprint(const MeshCoreSettings& mc) {
     mixString(mc.nodeName);
     mixString(mc.channelName);
     mixString(mc.channelPsk);
+    mixString(mc.floodScope);
     mix(&mc.announceHoldS, sizeof(mc.announceHoldS));
     mix(&mc.pathRequestHoldS, sizeof(mc.pathRequestHoldS));
     mix(&mc.airtimeBudgetKbH, sizeof(mc.airtimeBudgetKbH));
@@ -208,7 +209,8 @@ bool LvSettingsScreen::settingNeedsReboot(const SettingItem& item) const {
         labelEq(item.label, "Spread Factor") || labelEq(item.label, "Bandwidth") ||
         labelEq(item.label, "Coding Rate") || labelEq(item.label, "Path Hash") ||
         labelEq(item.label, "Channel Reach") || labelEq(item.label, "Node Name") ||
-        labelEq(item.label, "Channel PSK") || labelEq(item.label, "Announce Hold") ||
+        labelEq(item.label, "Channel PSK") || labelEq(item.label, "Flood Scope") ||
+        labelEq(item.label, "Announce Hold") ||
         labelEq(item.label, "Path Req Hold") || labelEq(item.label, "Airtime Budget"))) return loraSettingsChanged();
     if (labelEq(item.label, "WiFi Profile")) return s.wifiSTASelected != _rebootSnap.wifiSTASelected;
     if (isWiFiSSIDLabel(item.label) || isWiFiPasswordLabel(item.label)) return interfaceSettingsChanged();
@@ -2326,6 +2328,18 @@ void LvSettingsScreen::addMeshCoreItems(UserSettings& s, int& idx) {
     _items.push_back({"Channel Reach", SettingType::ENUM_CHOICE,
         [&mc]() { return mc.floodChannel ? 1 : 0; }, [&mc](int v) { mc.floodChannel = v != 0; },
         nullptr, 0, 1, 1, {"Zero-hop", "Flood"}});
+    idx++;
+
+    // MeshCore region for floods: empty or "*" = unscoped (wildcard). Checked on save.
+    SettingItem scope;
+    scope.label = "Flood Scope";
+    scope.type = SettingType::TEXT_INPUT;
+    scope.textGetter = [&mc]() -> const String& { return mc.floodScope; };
+    scope.textSetter = [&mc](const String& v) {
+        return UserConfig::trySetString(mc.floodScope, v.c_str(), v.length());
+    };
+    scope.maxTextLen = handheld::meshcore_rules::kMaxFloodScopeBytes;
+    _items.push_back(scope);
     idx++;
 
     SettingItem name;

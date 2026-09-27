@@ -1,5 +1,9 @@
 #include "MeshCoreHost.h"
 
+#include <SHA256.h>
+
+#include "config/MeshCoreRules.h"
+
 namespace handheld::meshcore {
 
 static_assert(kMaxGroupData == MAX_GROUP_DATA_LENGTH, "MeshCoreTypes.h must track MeshCore.h");
@@ -37,12 +41,55 @@ bool Host::sendData(DataType type, const uint8_t* data, size_t length) {
     return sent;
 }
 
-bool Host::sendAdvert(const char* nodeName, bool flood) {
+bool Host::sendAdvert(const char* nodeName, bool flooded) {
     mesh::Packet* pkt = createSelfAdvert(nodeName);
     if (!pkt) return false;
-    if (flood) sendFlood(pkt, 0u, static_cast<uint8_t>(_hashSize));
+    if (flooded) flood(pkt, 0);
     else sendZeroHop(pkt);
     return true;
+}
+
+bool Host::setFloodScope(const char* name) {
+    const size_t length = name ? strlen(name) : 0;
+    _scoped = false;
+    memset(_scopeKey, 0, sizeof(_scopeKey));
+    if (meshcore_rules::unscopedFlood(name, length)) return true;
+    if (!meshcore_rules::validFloodScope(name, length)) return false;
+    // Key = first 16 bytes of SHA-256("#name"); the '#' is implied if absent
+    // (RegionMap::getTransportKeysFor, TransportKeyStore::getAutoKeyFor).
+    SHA256 sha;
+    if (name[0] != '#') sha.update("#", 1);
+    sha.update(name, length);
+    sha.finalize(_scopeKey, sizeof(_scopeKey));
+    _scoped = true;
+    return true;
+}
+
+// HMAC-SHA256 over payload type + payload, truncated to 2 bytes; 0000 and FFFF
+// are reserved (TransportKey::calcTransportCode).
+uint16_t Host::transportCode(const mesh::Packet* pkt) const {
+    uint16_t code = 0;
+    SHA256 sha;
+    sha.resetHMAC(_scopeKey, sizeof(_scopeKey));
+    const uint8_t type = pkt->getPayloadType();
+    sha.update(&type, 1);
+    sha.update(pkt->payload, pkt->payload_len);
+    sha.finalizeHMAC(_scopeKey, sizeof(_scopeKey), &code, sizeof(code));
+    if (code == 0) ++code;
+    else if (code == 0xFFFF) --code;
+    return code;
+}
+
+// A flood, scoped like the companion firmware's sendFloodScoped: transport
+// codes {region code, 0} when a region is set, a plain flood otherwise.
+void Host::flood(mesh::Packet* pkt, uint32_t delayMs) {
+    const uint8_t hashSize = static_cast<uint8_t>(_hashSize);
+    if (!_scoped) {
+        sendFlood(pkt, delayMs, hashSize);
+        return;
+    }
+    uint16_t codes[2] = {transportCode(pkt), 0};
+    sendFlood(pkt, codes, delayMs, hashSize);
 }
 
 bool Host::isOurChannel(const mesh::GroupChannel& channel) const {
@@ -59,7 +106,7 @@ void Host::onChannelDataRecv(const mesh::GroupChannel& channel, mesh::Packet*, u
 }
 
 void Host::sendScoped(mesh::Packet* pkt, uint32_t delayMs) {
-    if (_reach == ChannelReach::Flood) sendFlood(pkt, delayMs, static_cast<uint8_t>(_hashSize));
+    if (_reach == ChannelReach::Flood) flood(pkt, delayMs);
     else sendZeroHop(pkt, delayMs);
 }
 

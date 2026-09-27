@@ -50,6 +50,7 @@ Config configFrom(const UserSettings& settings) {
     copyName(config.nodeName, mc.nodeName.isEmpty() ? settings.displayName : mc.nodeName, kDefaultNodeName);
     copyName(config.channelName, mc.channelName, kDefaultChannelName);
     strlcpy(config.channelPsk, mc.channelPsk.c_str(), sizeof(config.channelPsk));
+    strlcpy(config.floodScope, mc.floodScope.c_str(), sizeof(config.floodScope));
     config.pathHashSize = static_cast<PathHashSize>(mc.pathHashSize);   // sanitized to 1..3
     config.channelReach = mc.floodChannel ? ChannelReach::Flood : ChannelReach::ZeroHop;
     return config;

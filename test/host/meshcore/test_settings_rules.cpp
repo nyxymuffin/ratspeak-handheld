@@ -45,9 +45,25 @@ static void namesArePrintableAndFit() {
     CHECK(name("caf\xc3\xa9"));                          // UTF-8 bytes are printable here
 }
 
+static bool scope(const char* value) { return validFloodScope(value, std::strlen(value)); }
+static bool unscoped(const char* value) { return unscopedFlood(value, std::strlen(value)); }
+
+static void floodScopes() {
+    CHECK(scope("") && unscoped(""));                         // unscoped
+    CHECK(scope("*") && unscoped("*"));                       // MeshCore wildcard region
+    CHECK(scope("ncmesh") && !unscoped("ncmesh"));
+    CHECK(scope("#ncmesh"));
+    CHECK(!scope("#"));
+    CHECK(!scope("$private"));                                // needs a shared key
+    CHECK(!scope("two words"));
+    CHECK(scope("012345678901234567890123456789"));           // 30 bytes
+    CHECK(!scope("0123456789012345678901234567890"));         // 31 bytes
+}
+
 int main() {
     pskAcceptsOnlyCanonical128And256BitKeys();
     namesArePrintableAndFit();
+    floodScopes();
     if (failures) {
         std::printf("%d check(s) failed\n", failures);
         return 1;

@@ -29,6 +29,7 @@ bool sameConfigStrings(const UserSettings& left, const UserSettings& right) {
         !sameConfigString(left.meshcore.nodeName, right.meshcore.nodeName) ||
         !sameConfigString(left.meshcore.channelName, right.meshcore.channelName) ||
         !sameConfigString(left.meshcore.channelPsk, right.meshcore.channelPsk) ||
+        !sameConfigString(left.meshcore.floodScope, right.meshcore.floodScope) ||
         left.wifiSTANetworks.size() != right.wifiSTANetworks.size() ||
         left.tcpConnections.size() != right.tcpConnections.size()) return false;
     for (size_t i = 0; i < left.wifiSTANetworks.size(); ++i)
@@ -54,7 +55,7 @@ bool configCopyFits(const UserSettings& settings, size_t& charge) {
     if (!take(settings.wifiAPSSID) || !take(settings.wifiAPPassword) ||
         !take(settings.autoIfaceGroupId) || !take(settings.displayName) ||
         !take(settings.meshcore.nodeName) || !take(settings.meshcore.channelName) ||
-        !take(settings.meshcore.channelPsk)) return false;
+        !take(settings.meshcore.channelPsk) || !take(settings.meshcore.floodScope)) return false;
     for (const auto& network : settings.wifiSTANetworks)
         if (!take(network.ssid) || !take(network.password)) return false;
     for (const auto& endpoint : settings.tcpConnections) if (!take(endpoint.host)) return false;
@@ -290,7 +291,8 @@ bool UserConfig::parseJson(const char* json, size_t length, bool persisted, bool
         mc.airtimeBudgetKbH = constrain(doc["mc_air_kb"] | (int)mc.airtimeBudgetKbH, 0, 200);
         if (!assignConfigString(mc.nodeName, doc["mc_name"] | "") ||
             !assignConfigString(mc.channelName, doc["mc_ch_name"] | "") ||
-            !assignConfigString(mc.channelPsk, doc["mc_ch_psk"] | "")) return memoryFailure();
+            !assignConfigString(mc.channelPsk, doc["mc_ch_psk"] | "") ||
+            !assignConfigString(mc.floodScope, doc["mc_scope"] | "")) return memoryFailure();
 
         // WiFi mode — migrate from legacy wifi_enabled bool
         int mode = doc["wifi_mode"] | -1;
@@ -446,6 +448,7 @@ String UserConfig::serializeToJson(bool persisted, size_t limit, bool* unavailab
     doc["mc_name"]      = mc.nodeName;
     doc["mc_ch_name"]   = mc.channelName;
     doc["mc_ch_psk"]    = mc.channelPsk;
+    doc["mc_scope"]     = mc.floodScope;
 
     doc["wifi_mode"] = (int)_settings.wifiMode;
     doc["wifi_restore_mode"] = (int)_settings.wifiRestoreMode;
